@@ -1,0 +1,139 @@
+PSDK_HOME = C:\Program Files\Microsoft SDKs\Windows\v7.1
+BOST_HOME = C:\boost_1_44_0
+
+
+!IF "$(BUILD)" == ""
+BUILD = debug
+!ENDIF
+
+
+!IF "$(BUILD)" == "release"
+
+CL_OPTS = \
+	/O2 \
+	/Oi \
+	/GL \
+	/D "NODEBUG" \
+	/FD \
+	/Gy \
+	/Zi
+
+LINK_OPTS = \
+	/INCREMENTAL:NO \
+	/OPT:REF \
+	/OPT:ICF \
+	/LTCG \
+	/NODEFAULTLIB:LIBCMT \
+	libcmt.lib
+
+
+!ELSEIF  "$(BUILD)" == "debug"
+
+CL_OPTS = \
+	/Od \
+	/Gm \
+	/D "_DEBUG" \
+	/RTC1 \
+	/ZI
+
+LINK_OPTS = \
+	/INCREMENTAL:NO \
+	/DEBUG \
+	/NODEFAULTLIB:LIBCMT \
+	libcmtd.lib
+
+
+!ENDIF
+
+
+
+
+!IF "$(ARCH)" == ""
+ARCH = x86
+!ENDIF
+
+!IF "$(ARCH)" == "x64"
+
+LIB_ARCH_DIR = x64\
+
+!ELSEIF  "$(ARCH)" == "x86"
+
+LIB_ARCH_DIR = 
+
+!ENDIF
+
+
+
+
+
+all: \
+	libmwebsockc.lib
+
+
+
+libmwebsockc.lib: \
+		md5c.obj \
+		websocket_client.obj
+	LIB \
+		/MACHINE:$(ARCH) \
+		/OUT:"..\dist\libmwebsockc.lib" \
+		/NOLOGO \
+		/LIBPATH:"$(PSDK_HOME)\Lib$(LIB_ARCH_DIR)" \
+		/LIBPATH:"$(BOST_HOME)\stage\lib" \
+		/LTCG \
+		$**
+
+
+mddriver.exe: \
+		md5c.obj \
+		mddriver.obj
+	LINK \
+		/MACHINE:$(ARCH) \
+		/OUT:"..\dist\mddriver.exe" \
+		/NOLOGO \
+		/LIBPATH:"$(PSDK_HOME)\Lib$(LIB_ARCH_DIR)" \
+		$(LINK_OPTS) \
+		$**
+
+
+.c.obj:
+	CL \
+		/D "WIN32" \
+		/D "_CONSOLE" \
+		/EHsc \
+		/W3 \
+		/nologo \
+		/c \
+		/TC \
+		/I "..\include" \
+		/I "$(PSDK_HOME)\Include" \
+		$(CL_OPTS) \
+		$*.c
+.cpp.obj:
+	CL \
+		/D "WIN32" \
+		/D "_CONSOLE" \
+		/EHsc \
+		/W3 \
+		/nologo \
+		/c \
+		/TP \
+		/I "..\include" \
+		/I "$(PSDK_HOME)\Include" \
+		/I "$(BOST_HOME)" \
+		$(CL_OPTS) \
+		$*.cpp
+
+
+clean: clean_parts
+	DEL /Q ..\dist\libmwebsockc.lib
+	DEL /Q ..\dist\mddriver.exe
+	DEL /Q ..\dist\mddriver.pdb
+
+clean_parts:
+	DEL /Q *.obj
+	DEL /Q *.pdb
+	DEL /Q *.idb
+	DEL /Q *.res
+	DEL /Q *.tlb
+

@@ -1,0 +1,32 @@
+Prerequisites:
+
+boost headers
+boost_system
+boost_thread
+
+
+TO Compile:
+
+> cd src
+> make
+
+or for windows
+> nmake -f Makefile.win
+
+
+TO Test:
+
+> cd test
+> make 
+
+or for windows
+> nmake -f Makefile.win
+
+
+
+../dist/test [username]
+
+or for windows
+
+..\dist\test.exe [username]
+
