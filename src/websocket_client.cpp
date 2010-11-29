@@ -3,14 +3,13 @@
 #include <istream>
 #include <ostream>
 #include <sstream>
-#include <iostream>
 #include <iomanip>
 
+#include <boost/random.hpp>
 #include <boost/bind.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/thread.hpp>
 #include <boost/asio.hpp>
-#include <boost/random.hpp>
 
 #include "rfc_md5/global.h"
 #include "rfc_md5/md5.h"
@@ -121,9 +120,9 @@ websocket_key_generator::websocket_key_generator()
   unsigned int number_1 = rand_.next_int(max_1+1);
   unsigned int number_2 = rand_.next_int(max_2+1);
 
-  gen_key(spaces_1, number_1, key_1_);
-  gen_key(spaces_2, number_2, key_2_);
-  gen_bytes( key_3_);
+  key_1_ = gen_key(spaces_1, number_1);
+  key_2_ = gen_key(spaces_2, number_2);
+  key_3_ = gen_bytes();
 	
 
   //
@@ -150,50 +149,14 @@ websocket_key_generator::websocket_key_generator()
 
 }
 
+const std::string& websocket_key_generator::key_1() const { return key_1_; }
+const std::string& websocket_key_generator::key_2() const { return key_2_; }
+const std::string& websocket_key_generator::key_3() const { return key_3_; }
+const std::string& websocket_key_generator::expected() const { return expected_; }
 
-void websocket_key_generator::insert_chars( std::string& str )
-{
-  int chars = rand_.next_int(12)+1;
-  for( int i=0; i<chars; ++i)
-    {
-      int pos = rand_.next_int(str.length()-1);
-      str.insert(pos, 1, get_char());
-    }
 
-}
 
-char websocket_key_generator::get_char()
-{
-  const int fs = 0x21;
-  const int fe = 0x2f; 
-  const int ss = 0x3a;
-  const int se = 0x7e; 
-		
-  int fcount = (fe+1)-fs; // count of 1st range chars
-  int scount = (se+1)-ss; // count of 2nd range chars
-  int ncount = ss-(fe+1); // count of numeric chars
-  int ccount = fcount + scount; /* 84 */
-		
-  int offset = rand_.next_int(ccount); /* 0-83 */
-		
-  int c = offset + fs; /* skip operation chars */
-  if( c <= fe )
-    return c;
-  else
-    return c + ncount; /* skip numeric chars */
-}
-	
-
-void websocket_key_generator::insert_spaces(int spaces, std::string& str)
-{
-  for( int i=0; i<spaces; ++i)
-    {
-      int pos = rand_.next_int(str.length()-3);
-      str.insert(pos+1, 1, ' ');
-    }
-}
-
-void websocket_key_generator::gen_key(int spaces, int number, std::string& str)
+std::string websocket_key_generator::gen_key(int spaces, int number)
 {
 
   unsigned int product = spaces * number;
@@ -204,12 +167,11 @@ void websocket_key_generator::gen_key(int spaces, int number, std::string& str)
   insert_chars(key);
   insert_spaces(spaces, key);
 
-  str = key;
+  return key;
 	
 }
 
-
-void websocket_key_generator::gen_bytes( std::string& key )
+std::string websocket_key_generator::gen_bytes()
 {
   unsigned int k1 = rand_.next_int(0xffffffff);
   unsigned int k2 = rand_.next_int(0xffffffff);
@@ -226,7 +188,8 @@ void websocket_key_generator::gen_bytes( std::string& key )
     os.put(p_k2[i]);
 
   os << std::flush;
-  key = os.str();
+
+  return os.str();
 
 }
 
@@ -254,22 +217,64 @@ std::string websocket_key_generator::md5(const std::string& in )
   return os.str();
 }
 
-const std::string& websocket_key_generator::key_1() const { return key_1_; }
-const std::string& websocket_key_generator::key_2() const { return key_2_; }
-const std::string& websocket_key_generator::key_3() const { return key_3_; }
-const std::string& websocket_key_generator::expected() const { return expected_; }
+
+void websocket_key_generator::insert_chars( std::string& str )
+{
+  int chars = rand_.next_int(12)+1;
+  for( int i=0; i<chars; ++i)
+    {
+      int pos = rand_.next_int(str.length()-1);
+      str.insert(pos, 1, get_char());
+    }
+
+}
+
+void websocket_key_generator::insert_spaces(int spaces, std::string& str)
+{
+  for( int i=0; i<spaces; ++i)
+    {
+      int pos = rand_.next_int(str.length()-3);
+      str.insert(pos+1, 1, ' ');
+    }
+}
+
+char websocket_key_generator::get_char()
+{
+  const int fs = 0x21;
+  const int fe = 0x2f; 
+  const int ss = 0x3a;
+  const int se = 0x7e; 
+		
+  int fcount = (fe+1)-fs; // count of 1st range chars
+  int scount = (se+1)-ss; // count of 2nd range chars
+  int ncount = ss-(fe+1); // count of numeric chars
+  int ccount = fcount + scount; /* 84 */
+		
+  int offset = rand_.next_int(ccount); /* 0-83 */
+		
+  int c = offset + fs; /* skip operation chars */
+  if( c <= fe )
+    return c;
+  else
+    return c + ncount; /* skip numeric chars */
+}
+	
+
+
 
 
 
 
 client::client(const std::string& url, const std::string& protocol)
-  : url_(url),
+  : ready_state_(CLOSED),
+    url_(url),
     resolver_(io_service_),
     socket_(io_service_)
 {}
 
 void client::connect()
 {
+  ready_state_ = CONNECTING;
 
   try
     {
@@ -296,6 +301,8 @@ void client::connect()
 
 void client::close()
 {
+  ready_state_ = CLOSING;
+
   std::ostream os(&request_);
   os.put(0x00);
   os.put(0xff);
@@ -307,6 +314,7 @@ void client::close()
 				       boost::asio::placeholders::error));
 
   io_service_.stop();
+
 }
 
 
@@ -322,6 +330,9 @@ void client::send(const std::string& msg)
 			   boost::bind(&client::handle_write_frame, this,
 				       boost::asio::placeholders::error));
 }
+
+
+int client::ready_state() const { return ready_state_; }
 
 
 void client::handle_resolve(const boost::system::error_code& err,
@@ -477,6 +488,7 @@ void client::check_handshake()
 
   if( key_gen_.expected() == os.str() )
     {
+      ready_state_ = OPEN;
       on_open();
       if( response_.size() > 0 )
 	{
@@ -579,7 +591,6 @@ void client::handle_write_frame(const boost::system::error_code& err)
   if (err)
     on_error( err.value(), err.message() );
 }
-
 
 
 }

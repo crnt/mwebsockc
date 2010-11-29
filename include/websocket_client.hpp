@@ -3,8 +3,8 @@
 
 
 #include <string>
-#include <boost/asio.hpp>
 #include <boost/random.hpp>
+#include <boost/asio.hpp>
 
 
 namespace mwebsock
@@ -67,24 +67,21 @@ public:
 
   websocket_key_generator();
 
-  void insert_chars( std::string& str );
-
-  char get_char();
-
-  void insert_spaces(int spaces, std::string& str);
-
-  void gen_key(int spaces, int number, std::string& str);
-
-  void gen_bytes( std::string& key );
-
-  std::string md5(const std::string& in );
-
   const std::string& key_1() const;
   const std::string& key_2() const ;
   const std::string& key_3() const;
   const std::string& expected() const;
 
 private:
+
+  std::string gen_key(int spaces, int number);
+  std::string gen_bytes();
+  std::string md5(const std::string& in );
+
+  void insert_chars( std::string& str );
+  void insert_spaces(int spaces, std::string& str);
+  char get_char();
+
   random rand_;
 
   std::string key_1_;
@@ -99,14 +96,18 @@ private:
 class client
 {
 public:
+  static const int CONNECTING = 0;
+  static const int OPEN = 1;
+  static const int CLOSING = 2;
+  static const int CLOSED = 3;
+
   client(const std::string& url, const std::string& protocol = "");
 
   void connect();
-
   void close();
-
   void send(const std::string& msg);
 
+  int ready_state() const;
 
   virtual void on_message( const std::string& msg) = 0;
   virtual void on_open() = 0;
@@ -143,6 +144,8 @@ private:
 
   void check_handshake();
   void check_frame_type();
+
+  int ready_state_;
 
   url url_;
   websocket_key_generator key_gen_;
