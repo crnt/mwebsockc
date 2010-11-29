@@ -285,17 +285,17 @@ void client::connect()
       throw std::domain_error("url is not correct");
     }
 
+
   boost::asio::ip::tcp::resolver::query query(url_.host(), url_.port());
   resolver_.async_resolve(query,
 			  boost::bind(&client::handle_resolve, this,
 				      boost::asio::placeholders::error,
 				      boost::asio::placeholders::iterator));
 
-
   boost::shared_ptr<boost::thread> thread
-    (new boost::thread(
-		       boost::bind(&boost::asio::io_service::run, &io_service_)));
-  
+     (new boost::thread(
+  		       boost::bind(&boost::asio::io_service::run, &io_service_)));
+
 }
 
 
@@ -308,14 +308,10 @@ void client::close()
   os.put(0xff);
   os.flush();
 
-  // must synchronize ???
   boost::asio::async_write(socket_, request_,
-			   boost::bind(&client::handle_write_frame, this,
+			   boost::bind(&client::handle_close, this,
 				       boost::asio::placeholders::error));
-
-  io_service_.stop();
-
-}
+ }
 
 
 void client::send(const std::string& msg)
@@ -590,6 +586,11 @@ void client::handle_write_frame(const boost::system::error_code& err)
 {
   if (err)
     on_error( err.value(), err.message() );
+}
+
+void client::handle_close(const boost::system::error_code& err)
+{
+  io_service_.stop();
 }
 
 

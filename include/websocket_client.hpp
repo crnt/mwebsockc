@@ -141,6 +141,7 @@ private:
   //  void handle_read_binary_frame(const boost::system::error_code& err);
 
   void handle_write_frame(const boost::system::error_code& err);
+  void handle_close(const boost::system::error_code& err);
 
   void check_handshake();
   void check_frame_type();
