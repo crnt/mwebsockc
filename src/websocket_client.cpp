@@ -292,9 +292,13 @@ void client::connect()
 				      boost::asio::placeholders::error,
 				      boost::asio::placeholders::iterator));
 
-  boost::shared_ptr<boost::thread> thread
-     (new boost::thread(
-  		       boost::bind(&boost::asio::io_service::run, &io_service_)));
+
+  //  thread_.reset(new boost::thread(
+  //				  boost::bind(&boost::asio::io_service::run, &io_service_)));
+
+   thread_ = new boost::thread(
+  				  boost::bind(&boost::asio::io_service::run, &io_service_));
+
 
 }
 
@@ -591,6 +595,9 @@ void client::handle_write_frame(const boost::system::error_code& err)
 void client::handle_close(const boost::system::error_code& err)
 {
   io_service_.stop();
+  thread_->join();
+  delete thread_;
+
 }
 
 

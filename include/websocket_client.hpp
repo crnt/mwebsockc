@@ -4,6 +4,8 @@
 
 #include <string>
 #include <boost/random.hpp>
+//#include <boost/shared_ptr.hpp>
+#include <boost/thread.hpp>
 #include <boost/asio.hpp>
 
 
@@ -158,6 +160,9 @@ private:
 
   boost::asio::streambuf request_;
   boost::asio::streambuf response_;
+
+  //boost::shared_ptr< boost::thread > thread_;
+    boost::thread* thread_;
 
 };
 
