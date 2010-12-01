@@ -2,40 +2,47 @@
 #include "websocket_client.hpp"
 
 
+class chat_client
+  : public mwebsock::client
+{
+public:
+  chat_client( const std::string& name )
+    : mwebsock::client("ws://mitsuwo.shizentai.jp:8080/mchat/ws")
+    ,name_(name)
+  {}
+ 
+  void on_message( const std::string& msg)
+  {
+    std::cout << msg << std::endl;
+  }
+
+  void on_open()
+  {
+    this->send("c:" + name_);
+    std::cout << ">> server connected." << std::endl;
+  }
+
+  void on_close()
+  {
+    std::cout << ">> server closed." << std::endl;
+  }
+
+  void on_error( int error_code, const std::string& msg )
+  {
+    std::cout << "error:" << msg << std::endl;
+  }
+private:
+  std::string name_;
+};
+
+
 int main(int argc, char** argv)
 {
-  class chat_client
-    : public mwebsock::client
-  {
-  public:
-    chat_client( const std::string& name )
-      : mwebsock::client("ws://mitsuwo.shizentai.jp:8080/mchat/ws")
-      ,name_(name)
-    {}
- 
-    void on_message( const std::string& msg)
+  if( argc < 2 ) 
     {
-      std::cout << msg << std::endl;
+      std::cout << "test [user_name]" << std::endl;
+      return 1;
     }
-
-    void on_open()
-    {
-      this->send("c:" + name_);
-      std::cout << ">> server connected." << std::endl;
-    }
-
-    void on_close()
-    {
-      std::cout << ">> server closed." << std::endl;
-    }
-
-    void on_error( int error_code, const std::string& msg )
-    {
-      std::cout << "error:" << error_code << std::endl;
-    }
-  private:
-    std::string name_;
-  };
 
   try
     {
@@ -49,13 +56,7 @@ int main(int argc, char** argv)
 
 	switch(c)
 	  {
-	  case 'n':
-	    {
-	      const std::string & data = line.substr(2);
-	      cl.send("n:" + data );
-	    }
-	    break;
-	  case 'c':
+	  case 'q':
 	    {
 	      cl.close();
 	      std::cout << ">> client closed." << std::endl;

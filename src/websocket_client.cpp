@@ -7,9 +7,9 @@
 
 #include <boost/random.hpp>
 #include <boost/bind.hpp>
+#include <boost/asio.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/thread.hpp>
-#include <boost/asio.hpp>
 
 #include "rfc_md5/global.h"
 #include "rfc_md5/md5.h"
@@ -282,6 +282,7 @@ void client::connect()
     }
   catch(const url_exception& e)
     {
+      ready_state_ = CLOSED;
       throw std::domain_error("url is not correct");
     }
 
@@ -292,14 +293,11 @@ void client::connect()
 				      boost::asio::placeholders::error,
 				      boost::asio::placeholders::iterator));
 
-
-  //  thread_.reset(new boost::thread(
-  //				  boost::bind(&boost::asio::io_service::run, &io_service_)));
-
-   thread_ = new boost::thread(
-  				  boost::bind(&boost::asio::io_service::run, &io_service_));
-
-
+  boost::shared_ptr<boost::thread> thread
+    (new boost::thread(
+  		       boost::bind(&boost::asio::io_service::run, &io_service_)));
+  thread->detach();
+  
 }
 
 
@@ -312,10 +310,12 @@ void client::close()
   os.put(0xff);
   os.flush();
 
-  boost::asio::async_write(socket_, request_,
-			   boost::bind(&client::handle_close, this,
-				       boost::asio::placeholders::error));
- }
+  // synchronized operation
+  boost::asio::write(socket_, request_);
+  io_service_.stop();
+  
+  ready_state_ = CLOSED;
+}
 
 
 void client::send(const std::string& msg)
@@ -327,7 +327,7 @@ void client::send(const std::string& msg)
   os.flush();
 
   boost::asio::async_write(socket_, request_,
-			   boost::bind(&client::handle_write_frame, this,
+			   boost::bind(&client::handle_write_text_frame, this,
 				       boost::asio::placeholders::error));
 }
 
@@ -347,6 +347,7 @@ void client::handle_resolve(const boost::system::error_code& err,
     }
   else
     {
+      ready_state_ = CLOSED;
       on_error( err.value(), err.message() );
     }
 }
@@ -383,6 +384,7 @@ void client::handle_connect(const boost::system::error_code& err,
     }
   else
     {
+      ready_state_ = CLOSED;
       on_error( err.value(), err.message() );
     }
 }
@@ -397,6 +399,7 @@ void client::handle_write_request(const boost::system::error_code& err)
     }
   else
     {
+      ready_state_ = CLOSED;
       on_error( err.value(), err.message() );
     }
 }
@@ -414,11 +417,13 @@ void client::handle_read_status_line(const boost::system::error_code& err)
       std::getline(is, status_message);
       if (!is || http_version.substr(0, 5) != "HTTP/")
 	{
+	  ready_state_ = CLOSED;
 	  on_error( INVALID_RESPONSE, "invailed response" );
 	  return;
 	}
       if (status_code != 101)
 	{
+	  ready_state_ = CLOSED;
 	  on_error( BAD_STATUS, "bad status" );
 	  return;
 	}
@@ -429,6 +434,7 @@ void client::handle_read_status_line(const boost::system::error_code& err)
     }
   else
     {
+      ready_state_ = CLOSED;
       on_error( err.value(), err.message() );
     }
 }
@@ -458,6 +464,7 @@ void client::handle_read_headers(const boost::system::error_code& err)
     }
   else
     {
+      ready_state_ = CLOSED;
       on_error( err.value(), err.message() );
     }
 }
@@ -470,6 +477,7 @@ void client::handle_read_key(const boost::system::error_code& err)
     }
   else
     {
+      ready_state_ = CLOSED;
       on_error( err.value(), err.message() );
     }
 }
@@ -504,6 +512,7 @@ void client::check_handshake()
     }
   else
     {
+      ready_state_ = CLOSED;
       on_error( HANDSHAKE_FAILED, "handshake failed" );
     }
 
@@ -517,6 +526,7 @@ void client::handle_read_frame_type(const boost::system::error_code& err)
     }
   else
     {
+      ready_state_ = CLOSED;
       on_error( err.value(), err.message() );
     }
 }
@@ -537,11 +547,13 @@ void client::check_frame_type()
     case 0x80:
       {
 	/* binary frame */
+	ready_state_ = CLOSED;
 	on_error( BAD_FRAME, "bad frame" );
       }
       break;
     default:
       {
+	ready_state_ = CLOSED;
 	on_error( BAD_FRAME, "bad frame" );
       }
       break;
@@ -556,6 +568,7 @@ void client::handle_read_text_frame(const boost::system::error_code& err)
       std::istream is(&response_);
       if( is.peek() == 0xff )
 	{
+	  ready_state_ = CLOSED;
 	  on_close();
 	}
       else
@@ -581,23 +594,16 @@ void client::handle_read_text_frame(const boost::system::error_code& err)
     }
   else
     {
+      ready_state_ = CLOSED;
       on_error( err.value(), err.message() );
     }
 }
 
 
-void client::handle_write_frame(const boost::system::error_code& err)
+void client::handle_write_text_frame(const boost::system::error_code& err)
 {
   if (err)
     on_error( err.value(), err.message() );
-}
-
-void client::handle_close(const boost::system::error_code& err)
-{
-  io_service_.stop();
-  thread_->join();
-  delete thread_;
-
 }
 
 
