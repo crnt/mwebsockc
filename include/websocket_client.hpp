@@ -93,33 +93,49 @@ private:
 
 
 
-class client
+
+class client_impl;
+
+class client_handler
 {
 public:
-  static const int CONNECTING = 0;
-  static const int OPEN = 1;
-  static const int CLOSING = 2;
-  static const int CLOSED = 3;
-
-  client(const std::string& url, const std::string& protocol = "");
-
-  void connect();
-  void close();
-  void send(const std::string& msg);
-
-  int ready_state() const;
+  void set_client(client_impl* client)
+  {
+    client_ = client;
+  }
 
   virtual void on_message( const std::string& msg) = 0;
   virtual void on_open() = 0;
   virtual void on_close() = 0;
   virtual void on_error( int error_code, const std::string& msg ) = 0;
 
-private:
+protected:
+  client_impl* client_;
 
-  static const int INVALID_RESPONSE = 1;
-  static const int BAD_STATUS = 2;
-  static const int HANDSHAKE_FAILED = 3;
-  static const int BAD_FRAME = 4;
+};
+
+
+class client_impl
+{
+public:
+  static const int CONNECTING = 0;
+  static const int OPEN = 1;
+  static const int CLOSING = 2;
+  static const int CLOSED = 3;
+  
+  client_impl(client_handler& handler, const std::string& url, const std::string& protocol = "");
+
+  void close();
+  void send(const std::string& msg);
+
+  int ready_state() const;
+  
+private:
+  static const int INVALID_URI = 1;
+  static const int INVALID_RESPONSE = 2;
+  static const int BAD_STATUS = 3;
+  static const int HANDSHAKE_FAILED = 4;
+  static const int BAD_FRAME = 5;
 
   void handle_resolve(const boost::system::error_code& err,
       boost::asio::ip::tcp::resolver::iterator endpoint_iterator);
@@ -141,11 +157,14 @@ private:
   //  void handle_read_binary_frame(const boost::system::error_code& err);
 
   void handle_write_text_frame(const boost::system::error_code& err);
+  //  void handle_close(const boost::system::error_code& err);
 
   void check_handshake();
   void check_frame_type();
 
   int ready_state_;
+
+  client_handler& handler_;
 
   url url_;
   websocket_key_generator key_gen_;
@@ -157,6 +176,7 @@ private:
 
   boost::asio::streambuf request_;
   boost::asio::streambuf response_;
+
 
 };
 

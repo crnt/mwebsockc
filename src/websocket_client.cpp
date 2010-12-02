@@ -1,3 +1,4 @@
+
 #include <ctime>
 #include <string>
 #include <istream>
@@ -265,16 +266,16 @@ char websocket_key_generator::get_char()
 
 
 
-client::client(const std::string& url, const std::string& protocol)
-  : ready_state_(CLOSED),
+client_impl::client_impl(client_handler& handler, const std::string& url, const std::string& protocol)
+  : ready_state_(CONNECTING),
+    handler_(handler),
     url_(url),
     resolver_(io_service_),
     socket_(io_service_)
-{}
-
-void client::connect()
 {
   ready_state_ = CONNECTING;
+  
+  handler_.set_client(this);
 
   try
     {
@@ -283,13 +284,13 @@ void client::connect()
   catch(const url_exception& e)
     {
       ready_state_ = CLOSED;
-      throw std::domain_error("url is not correct");
-    }
+      handler_.on_error( INVALID_URI, e.what() );
+     }
 
 
   boost::asio::ip::tcp::resolver::query query(url_.host(), url_.port());
   resolver_.async_resolve(query,
-			  boost::bind(&client::handle_resolve, this,
+			  boost::bind(&client_impl::handle_resolve, this,
 				      boost::asio::placeholders::error,
 				      boost::asio::placeholders::iterator));
 
@@ -297,11 +298,11 @@ void client::connect()
     (new boost::thread(
   		       boost::bind(&boost::asio::io_service::run, &io_service_)));
   thread->detach();
-  
+
 }
 
 
-void client::close()
+void client_impl::close()
 {
   ready_state_ = CLOSING;
 
@@ -313,12 +314,15 @@ void client::close()
   // synchronized operation
   boost::asio::write(socket_, request_);
   io_service_.stop();
-  
+  //  boost::asio::async_write(socket_, request_,
+  //		   boost::bind(&client::handle_close, this,
+  //				       boost::asio::placeholders::error));
+
   ready_state_ = CLOSED;
 }
 
 
-void client::send(const std::string& msg)
+void client_impl::send(const std::string& msg)
 {
   std::ostream os(&request_);
   os.put(0x00);
@@ -327,32 +331,32 @@ void client::send(const std::string& msg)
   os.flush();
 
   boost::asio::async_write(socket_, request_,
-			   boost::bind(&client::handle_write_text_frame, this,
+			   boost::bind(&client_impl::handle_write_text_frame, this,
 				       boost::asio::placeholders::error));
 }
 
 
-int client::ready_state() const { return ready_state_; }
+int client_impl::ready_state() const { return ready_state_; }
 
 
-void client::handle_resolve(const boost::system::error_code& err,
+void client_impl::handle_resolve(const boost::system::error_code& err,
     boost::asio::ip::tcp::resolver::iterator endpoint_iterator)
 {
   if (!err)
     {
       boost::asio::ip::tcp::endpoint endpoint = *endpoint_iterator;
       socket_.async_connect(endpoint,
-			    boost::bind(&client::handle_connect, this,
+			    boost::bind(&client_impl::handle_connect, this,
 					boost::asio::placeholders::error, ++endpoint_iterator));
     }
   else
     {
       ready_state_ = CLOSED;
-      on_error( err.value(), err.message() );
+      handler_.on_error( err.value(), err.message() );
     }
 }
 
-void client::handle_connect(const boost::system::error_code& err,
+void client_impl::handle_connect(const boost::system::error_code& err,
     boost::asio::ip::tcp::resolver::iterator endpoint_iterator)
 {
   if (!err)
@@ -370,7 +374,7 @@ void client::handle_connect(const boost::system::error_code& err,
       os << std::flush;
 
       boost::asio::async_write(socket_, request_,
-			       boost::bind(&client::handle_write_request, this,
+			       boost::bind(&client_impl::handle_write_request, this,
 					   boost::asio::placeholders::error));
     }
   else if (endpoint_iterator != boost::asio::ip::tcp::resolver::iterator())
@@ -379,32 +383,32 @@ void client::handle_connect(const boost::system::error_code& err,
       socket_.close();
       boost::asio::ip::tcp::endpoint endpoint = *endpoint_iterator;
       socket_.async_connect(endpoint,
-			    boost::bind(&client::handle_connect, this,
+			    boost::bind(&client_impl::handle_connect, this,
 			    boost::asio::placeholders::error, ++endpoint_iterator));
     }
   else
     {
       ready_state_ = CLOSED;
-      on_error( err.value(), err.message() );
+      handler_.on_error( err.value(), err.message() );
     }
 }
 
-void client::handle_write_request(const boost::system::error_code& err)
+void client_impl::handle_write_request(const boost::system::error_code& err)
 {
   if (!err)
     {
       boost::asio::async_read_until(socket_, response_, "\r\n",
-				    boost::bind(&client::handle_read_status_line, this,
+				    boost::bind(&client_impl::handle_read_status_line, this,
 						boost::asio::placeholders::error));
     }
   else
     {
       ready_state_ = CLOSED;
-      on_error( err.value(), err.message() );
+      handler_.on_error( err.value(), err.message() );
     }
 }
 
-void client::handle_read_status_line(const boost::system::error_code& err)
+void client_impl::handle_read_status_line(const boost::system::error_code& err)
 {
   if (!err)
     {
@@ -418,28 +422,28 @@ void client::handle_read_status_line(const boost::system::error_code& err)
       if (!is || http_version.substr(0, 5) != "HTTP/")
 	{
 	  ready_state_ = CLOSED;
-	  on_error( INVALID_RESPONSE, "invailed response" );
+	  handler_.on_error( INVALID_RESPONSE, "invailed response" );
 	  return;
 	}
       if (status_code != 101)
 	{
 	  ready_state_ = CLOSED;
-	  on_error( BAD_STATUS, "bad status" );
+	  handler_.on_error( BAD_STATUS, "bad status" );
 	  return;
 	}
 
       boost::asio::async_read_until(socket_, response_, "\r\n\r\n",
-				    boost::bind(&client::handle_read_headers, this,
+				    boost::bind(&client_impl::handle_read_headers, this,
 						boost::asio::placeholders::error));
     }
   else
     {
       ready_state_ = CLOSED;
-      on_error( err.value(), err.message() );
+      handler_.on_error( err.value(), err.message() );
     }
 }
 
-void client::handle_read_headers(const boost::system::error_code& err)
+void client_impl::handle_read_headers(const boost::system::error_code& err)
 {
   if (!err)
     {
@@ -458,18 +462,18 @@ void client::handle_read_headers(const boost::system::error_code& err)
 	{
 	  boost::asio::async_read(socket_, response_,
 				  boost::asio::transfer_at_least(16),
-				  boost::bind(&client::handle_read_key, this,
+				  boost::bind(&client_impl::handle_read_key, this,
 					      boost::asio::placeholders::error));
 	}
     }
   else
     {
       ready_state_ = CLOSED;
-      on_error( err.value(), err.message() );
+      handler_.on_error( err.value(), err.message() );
     }
 }
 
-void client::handle_read_key(const boost::system::error_code& err)
+void client_impl::handle_read_key(const boost::system::error_code& err)
 {
   if (!err)
     {
@@ -478,11 +482,11 @@ void client::handle_read_key(const boost::system::error_code& err)
   else
     {
       ready_state_ = CLOSED;
-      on_error( err.value(), err.message() );
+      handler_.on_error( err.value(), err.message() );
     }
 }
 
-void client::check_handshake()
+void client_impl::check_handshake()
 {
   std::istream is(&response_);
   std::ostringstream os;
@@ -497,7 +501,7 @@ void client::check_handshake()
   if( key_gen_.expected() == os.str() )
     {
       ready_state_ = OPEN;
-      on_open();
+      handler_.on_open();
       if( response_.size() > 0 )
 	{
 	  check_frame_type();
@@ -506,19 +510,19 @@ void client::check_handshake()
 	{
 	  boost::asio::async_read(socket_, response_,
 				  boost::asio::transfer_at_least(1),
-				  boost::bind(&client::handle_read_frame_type, this,
+				  boost::bind(&client_impl::handle_read_frame_type, this,
 					      boost::asio::placeholders::error));
 	}
     }
   else
     {
       ready_state_ = CLOSED;
-      on_error( HANDSHAKE_FAILED, "handshake failed" );
+      handler_.on_error( HANDSHAKE_FAILED, "handshake failed" );
     }
 
 }
 	
-void client::handle_read_frame_type(const boost::system::error_code& err)
+void client_impl::handle_read_frame_type(const boost::system::error_code& err)
 {
   if (!err)
     {
@@ -527,11 +531,11 @@ void client::handle_read_frame_type(const boost::system::error_code& err)
   else
     {
       ready_state_ = CLOSED;
-      on_error( err.value(), err.message() );
+      handler_.on_error( err.value(), err.message() );
     }
 }
 
-void client::check_frame_type()
+void client_impl::check_frame_type()
 {
   std::istream is(&response_);
 
@@ -540,7 +544,7 @@ void client::check_frame_type()
     case 0x00:
       {
 	boost::asio::async_read_until(socket_, response_, 0xff,
-				      boost::bind(&client::handle_read_text_frame, this,
+				      boost::bind(&client_impl::handle_read_text_frame, this,
 						  boost::asio::placeholders::error));
       }
       break;
@@ -548,20 +552,20 @@ void client::check_frame_type()
       {
 	/* binary frame */
 	ready_state_ = CLOSED;
-	on_error( BAD_FRAME, "bad frame" );
+	handler_.on_error( BAD_FRAME, "bad frame" );
       }
       break;
     default:
       {
 	ready_state_ = CLOSED;
-	on_error( BAD_FRAME, "bad frame" );
+	handler_.on_error( BAD_FRAME, "bad frame" );
       }
       break;
     }
 
 }
 
-void client::handle_read_text_frame(const boost::system::error_code& err)
+void client_impl::handle_read_text_frame(const boost::system::error_code& err)
 {
   if (!err)
     {
@@ -569,14 +573,14 @@ void client::handle_read_text_frame(const boost::system::error_code& err)
       if( is.peek() == 0xff )
 	{
 	  ready_state_ = CLOSED;
-	  on_close();
+	  handler_.on_close();
 	}
       else
 	{
 	  std::stringstream os;
 	  while( is.peek() != 0xff ) os.put(is.get());
 	  os << std::flush;
-	  on_message( os.str() );
+	  handler_.on_message( os.str() );
 	  is.get(); // skip 0xff
 	  
 	  if(response_.size() > 0)
@@ -587,7 +591,7 @@ void client::handle_read_text_frame(const boost::system::error_code& err)
 	    {
 	      boost::asio::async_read(socket_, response_,
 				      boost::asio::transfer_at_least(1),
-				      boost::bind(&client::handle_read_frame_type, this,
+				      boost::bind(&client_impl::handle_read_frame_type, this,
 						  boost::asio::placeholders::error));
 	    }
 	}
@@ -595,17 +599,30 @@ void client::handle_read_text_frame(const boost::system::error_code& err)
   else
     {
       ready_state_ = CLOSED;
-      on_error( err.value(), err.message() );
+      handler_.on_error( err.value(), err.message() );
     }
 }
 
 
-void client::handle_write_text_frame(const boost::system::error_code& err)
+void client_impl::handle_write_text_frame(const boost::system::error_code& err)
 {
   if (err)
-    on_error( err.value(), err.message() );
+    handler_.on_error( err.value(), err.message() );
 }
 
+/*
+void client::handle_close(const boost::system::error_code& err)
+{
+  //  resolver_.close();
+  //  socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_send);
+  //  socket_.close();
+  io_service_->stop();
+  delete io_service_;
+  //  io_service_.reset();
+  std::cout <<"handle_close" << std::endl;
+  ready_state_ = CLOSED;
+}
+*/
 
 }
 

@@ -1,14 +1,12 @@
 #include <iostream>
 #include "websocket_client.hpp"
 
-
-class chat_client
-  : public mwebsock::client
+class chat_handler
+  : public mwebsock::client_handler
 {
 public:
-  chat_client( const std::string& name )
-    : mwebsock::client("ws://mitsuwo.shizentai.jp:8080/mchat/ws")
-    ,name_(name)
+  chat_handler( const std::string& name )
+    :name_(name)
   {}
  
   void on_message( const std::string& msg)
@@ -18,7 +16,7 @@ public:
 
   void on_open()
   {
-    this->send("c:" + name_);
+    client_->send("c:" + name_);
     std::cout << ">> server connected." << std::endl;
   }
 
@@ -31,6 +29,7 @@ public:
   {
     std::cout << "error:" << msg << std::endl;
   }
+
 private:
   std::string name_;
 };
@@ -46,8 +45,8 @@ int main(int argc, char** argv)
 
   try
     {
-      chat_client cl(argv[1]);
-      cl.connect();
+      chat_handler handler(argv[1]);
+      mwebsock::client_impl client(handler, "ws://mitsuwo.shizentai.jp:8080/mchat/ws");
 
       std::string line;
       while(std::getline(std::cin, line ))
@@ -58,18 +57,18 @@ int main(int argc, char** argv)
 	  {
 	  case 'q':
 	    {
-	      cl.close();
+	      client.close();
 	      std::cout << ">> client closed." << std::endl;
 	      return 0;
 	    }
 	    break;
 	  default:
 	    {
-	      cl.send("m:" + line );
+	      client.send("m:" + line );
 	    }
-	      break;
-	 }
-
+	    break;
+	  }
+	
       }
 
     }
@@ -77,8 +76,7 @@ int main(int argc, char** argv)
     {
       std::cout << "Exception: " << e.what() << "\n";
     }
-
+  
   return 0;
-
  
 }
