@@ -1,11 +1,12 @@
 #include <iostream>
 #include "websocket_client.hpp"
 
-class chat_handler
-  : public mwebsock::client_handler
+
+class chat_client
+  : public mwebsock::client
 {
 public:
-  chat_handler( const std::string& name )
+  chat_client( const std::string& name )
     :name_(name)
   {}
  
@@ -16,7 +17,7 @@ public:
 
   void on_open()
   {
-    client_->send("c:" + name_);
+    this->send("c:" + name_);
     std::cout << ">> server connected." << std::endl;
   }
 
@@ -45,8 +46,8 @@ int main(int argc, char** argv)
 
   try
     {
-      chat_handler handler(argv[1]);
-      mwebsock::client_impl client(handler, "ws://mitsuwo.shizentai.jp:8080/mchat/ws");
+      chat_client client(argv[1]);
+      client.connect("ws://mitsuwo.shizentai.jp:8080/mchat/ws");
 
       std::string line;
       while(std::getline(std::cin, line ))

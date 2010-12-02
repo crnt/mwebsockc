@@ -624,6 +624,30 @@ void client::handle_close(const boost::system::error_code& err)
 }
 */
 
+
+
+void client::connect(const std::string& url, const std::string& protocol )
+{
+  client_impl_ = new client_impl(*this, url, protocol);
+}
+
+void client::close()
+{
+  client_impl_->close();
+  delete client_impl_;
+}
+
+void client::send(const std::string& msg)
+{
+  client_impl_->send(msg);
+}
+
+int client::ready_state() const
+{
+  return client_impl_->ready_state();
+}
+
+
 }
 
 

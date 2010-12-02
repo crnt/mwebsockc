@@ -181,6 +181,29 @@ private:
 };
 
 
+class client
+  :public client_handler
+{
+public:
+ 
+  void connect(const std::string& url, const std::string& protocol = "");
+  void close();
+  void send(const std::string& msg);
+
+  int ready_state() const;
+
+  virtual void on_message( const std::string& msg) = 0;
+  virtual void on_open() = 0;
+  virtual void on_close() = 0;
+  virtual void on_error( int error_code, const std::string& msg ) = 0;
+
+private:
+  client_impl* client_impl_;
+
+};
+
+
+
 }
 
 
