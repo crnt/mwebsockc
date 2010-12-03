@@ -294,10 +294,7 @@ client_impl::client_impl(client_handler& handler, const std::string& url, const 
 				      boost::asio::placeholders::error,
 				      boost::asio::placeholders::iterator));
 
-  boost::shared_ptr<boost::thread> thread
-    (new boost::thread(
-  		       boost::bind(&boost::asio::io_service::run, &io_service_)));
-  thread->detach();
+  thread_ = new boost::thread(boost::bind(&boost::asio::io_service::run, &io_service_));
 
 }
 
@@ -314,9 +311,8 @@ void client_impl::close()
   // synchronized operation
   boost::asio::write(socket_, request_);
   io_service_.stop();
-  //  boost::asio::async_write(socket_, request_,
-  //		   boost::bind(&client::handle_close, this,
-  //				       boost::asio::placeholders::error));
+  thread_->join();
+  delete thread_;
 
   ready_state_ = CLOSED;
 }
@@ -609,20 +605,6 @@ void client_impl::handle_write_text_frame(const boost::system::error_code& err)
   if (err)
     handler_.on_error( err.value(), err.message() );
 }
-
-/*
-void client::handle_close(const boost::system::error_code& err)
-{
-  //  resolver_.close();
-  //  socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_send);
-  //  socket_.close();
-  io_service_->stop();
-  delete io_service_;
-  //  io_service_.reset();
-  std::cout <<"handle_close" << std::endl;
-  ready_state_ = CLOSED;
-}
-*/
 
 
 

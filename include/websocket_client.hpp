@@ -4,6 +4,7 @@
 
 #include <string>
 #include <boost/random.hpp>
+#include <boost/thread.hpp>
 #include <boost/asio.hpp>
 
 
@@ -157,7 +158,6 @@ private:
   //  void handle_read_binary_frame(const boost::system::error_code& err);
 
   void handle_write_text_frame(const boost::system::error_code& err);
-  //  void handle_close(const boost::system::error_code& err);
 
   void check_handshake();
   void check_frame_type();
@@ -177,6 +177,7 @@ private:
   boost::asio::streambuf request_;
   boost::asio::streambuf response_;
 
+  boost::thread* thread_;
 
 };
 
