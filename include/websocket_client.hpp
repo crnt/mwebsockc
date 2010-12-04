@@ -186,6 +186,7 @@ class client
   :public client_handler
 {
 public:
+  client();
  
   void connect(const std::string& url, const std::string& protocol = "");
   void close();

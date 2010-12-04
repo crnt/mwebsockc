@@ -606,7 +606,9 @@ void client_impl::handle_write_text_frame(const boost::system::error_code& err)
     handler_.on_error( err.value(), err.message() );
 }
 
-
+client::client()
+  : client_impl_(NULL)
+{}
 
 void client::connect(const std::string& url, const std::string& protocol )
 {
@@ -617,6 +619,7 @@ void client::close()
 {
   client_impl_->close();
   delete client_impl_;
+  client_impl_ = NULL;
 }
 
 void client::send(const std::string& msg)
@@ -626,7 +629,11 @@ void client::send(const std::string& msg)
 
 int client::ready_state() const
 {
-  return client_impl_->ready_state();
+  if( client_impl_ == NULL)
+    return client_impl::CLOSED;
+  else
+    return client_impl_->ready_state();
+  
 }
 
 
