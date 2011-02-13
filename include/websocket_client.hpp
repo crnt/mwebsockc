@@ -206,6 +206,58 @@ private:
 
 
 
+
+class ihandler;
+class iclient;
+
+class ihandler
+{
+public:
+  void set_client(iclient* client)
+  {
+    client_ = client;
+  }
+
+  virtual void on_message( const std::string& msg) = 0;
+  virtual void on_open() = 0;
+  virtual void on_close() = 0;
+  virtual void on_error( int error_code, const std::string& msg ) = 0;
+
+protected:
+  iclient* client_;
+
+};
+
+class iclient
+{
+public:
+  void set_handler(ihandler* handler)
+  {
+    handler_ = handler;
+  }
+
+  virtual void close() = 0;
+  virtual void send( const std::string& msg ) = 0;
+
+protected:
+  ihandler* handler_;
+
+};
+
+
+template<typename AsyncStream>
+class handler_impl
+{
+
+
+
+};
+
+
+
+
+
+
 }
 
 
