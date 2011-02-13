@@ -341,7 +341,7 @@ void client_impl::handle_resolve(const boost::system::error_code& err,
   if (!err)
     {
       boost::asio::ip::tcp::endpoint endpoint = *endpoint_iterator;
-      socket_.async_connect(endpoint,
+      socket_.lowest_layer().async_connect(endpoint,
 			    boost::bind(&client_impl::handle_connect, this,
 					boost::asio::placeholders::error, ++endpoint_iterator));
     }
@@ -376,9 +376,9 @@ void client_impl::handle_connect(const boost::system::error_code& err,
   else if (endpoint_iterator != boost::asio::ip::tcp::resolver::iterator())
     {
 
-      socket_.close();
+      socket_.lowest_layer().close();
       boost::asio::ip::tcp::endpoint endpoint = *endpoint_iterator;
-      socket_.async_connect(endpoint,
+      socket_.lowest_layer().async_connect(endpoint,
 			    boost::bind(&client_impl::handle_connect, this,
 			    boost::asio::placeholders::error, ++endpoint_iterator));
     }
