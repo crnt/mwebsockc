@@ -3,7 +3,7 @@
 
 
 class chat_client
-  : public mwebsock::client
+  : public mwebsock::nclient
 {
 public:
   chat_client( const std::string& name )
@@ -47,7 +47,7 @@ int main(int argc, char** argv)
   try
     {
       chat_client client(argv[1]);
-      client.connect("ws://mitsuwo.shizentai.jp:8080/mchat/ws");
+      client.connect("ws://mitsuji.org/mchat/ws");
 
       std::string line;
       while(std::getline(std::cin, line ))

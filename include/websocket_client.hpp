@@ -231,30 +231,500 @@ protected:
 class iclient
 {
 public:
-  void set_handler(ihandler* handler)
-  {
-    handler_ = handler;
-  }
 
   virtual void close() = 0;
   virtual void send( const std::string& msg ) = 0;
-
-protected:
-  ihandler* handler_;
+  virtual int ready_state() const = 0;
 
 };
 
 
 template<typename AsyncStream>
-class handler_impl
+class protocol_impl
 {
+public:
 
+	protocol_impl(AsyncStream& socket, ihandler& handler, url& url )
+		:socket_(socket)
+		,handler_(handler)
+		,url_(url)
+	{}
+
+	void close()
+	{
+		std::ostream os(&request_);
+		os.put(0x00);
+		os.put(0xff);
+		os.flush();
+
+		// synchronized operation
+		boost::asio::write(socket_, request_);
+
+	}
+
+	void send( const std::string& msg )
+	{
+		std::ostream os(&request_);
+		os.put(0x00);
+		os << msg;
+		os.put(0xff);
+		os.flush();
+
+		boost::asio::async_write(socket_, request_,
+		     boost::bind(&protocol_impl::handle_write_text_frame, this,
+		     boost::asio::placeholders::error));
+
+	}
+
+	void open()
+	{
+		std::ostream os(&request_);
+		os << "GET " << url_.path() << " HTTP/1.1\r\n";
+		os << "Upgrade: WebSocket" << "\r\n";
+		os << "Connection: Upgrade" << "\r\n";
+		os << "Host: " << url_.endpoint() << "\r\n";
+		os << "Origin: " << url_.raw() << "\r\n";
+		os << "Sec-WebSocket-Key1: " << key_gen_.key_1() << "\r\n";
+		os << "Sec-WebSocket-Key2: " << key_gen_.key_2() << "\r\n";
+		os << "\r\n";
+		os << key_gen_.key_3();
+		os << std::flush;
+
+		boost::asio::async_write(socket_, request_,
+		     boost::bind(&protocol_impl::handle_write_request, this,
+		     boost::asio::placeholders::error));
+
+	}
+
+
+	void handle_write_request(const boost::system::error_code& err)	
+	{
+	  if (!err)
+	    {
+	      boost::asio::async_read_until(socket_, response_, "\r\n",
+			    boost::bind(&protocol_impl::handle_read_status_line, this,	
+			   boost::asio::placeholders::error));
+	    }
+	  else
+	    {
+	      handler_.on_error( err.value(), err.message() );
+	    }
+	}
+	
+	void handle_read_status_line(const boost::system::error_code& err)
+	{
+	  if (!err)
+	    {
+	      std::istream is(&response_);
+	      std::string http_version;
+	      is >> http_version;
+	      unsigned int status_code;
+	      is >> status_code;
+	      std::string status_message;
+	      std::getline(is, status_message);
+	      if (!is || http_version.substr(0, 5) != "HTTP/")
+		{
+		  handler_.on_error( INVALID_RESPONSE, "invailed response" );
+		  return;
+		}
+	      if (status_code != 101)
+		{
+		  handler_.on_error( BAD_STATUS, "bad status" );
+		  return;
+		}
+	
+	      boost::asio::async_read_until(socket_, response_, "\r\n\r\n",
+					    boost::bind(&protocol_impl::handle_read_headers, this,
+							boost::asio::placeholders::error));
+	    }
+	  else
+	    {
+	      handler_.on_error( err.value(), err.message() );
+	    }
+	}
+	
+	void handle_read_headers(const boost::system::error_code& err)
+	{
+	  if (!err)
+	    {
+	      std::istream is(&response_);
+	
+	      // get header valiables later!
+	      std::string header;
+	      while (std::getline(is, header) && header != "\r")
+		;
+	
+	      if( response_.size() > 0 )
+		{
+		  check_handshake();
+		}
+		else
+		{
+		  boost::asio::async_read(socket_, response_,
+					  boost::asio::transfer_at_least(16),
+					  boost::bind(&protocol_impl::handle_read_key, this,
+						      boost::asio::placeholders::error));
+		}
+	    }
+	  else
+	    {
+	      handler_.on_error( err.value(), err.message() );
+	    }
+	}
+	
+	void handle_read_key(const boost::system::error_code& err)
+	{
+	  if (!err)
+	    {
+	      check_handshake();
+	    }
+	  else
+	    {
+	      handler_.on_error( err.value(), err.message() );
+	    }
+	}
+	
+	void check_handshake()
+	{
+	  std::istream is(&response_);
+	  std::ostringstream os;
+	  for(int i=0; i<16; ++i)
+	    {
+	      os << std::hex
+		 << std::setw(2) << std::setfill('0')
+		 << is.get();
+	    }
+	  os << std::flush;
+	
+	  if( key_gen_.expected() == os.str() )
+	    {
+	      handler_.on_open();
+	      if( response_.size() > 0 )
+		{
+		  check_frame_type();
+		}
+	      else
+		{
+		  boost::asio::async_read(socket_, response_,
+					  boost::asio::transfer_at_least(1),
+					  boost::bind(&protocol_impl::handle_read_frame_type, this,
+						      boost::asio::placeholders::error));
+		}
+	    }
+	  else
+	    {
+	      handler_.on_error( HANDSHAKE_FAILED, "handshake failed" );
+	    }
+	
+	}
+		
+	void handle_read_frame_type(const boost::system::error_code& err)
+	{
+	  if (!err)
+	    {
+	      check_frame_type();
+	    }
+	  else
+	    {
+	      handler_.on_error( err.value(), err.message() );
+	    }
+	}
+	
+	void check_frame_type()
+	{
+	  std::istream is(&response_);
+	
+	  switch( is.get() )
+	    {
+	    case 0x00:
+	      {
+		boost::asio::async_read_until(socket_, response_, 0xff,
+					      boost::bind(&protocol_impl::handle_read_text_frame, this	,
+							  boost::asio::placeholders::error));
+	      }
+	      break;
+	    case 0x80:
+	      {
+		/* binary frame */
+		handler_.on_error( BAD_FRAME, "bad frame" );
+	      }
+	      break;
+	    default:
+	      {
+		handler_.on_error( BAD_FRAME, "bad frame" );
+	      }
+	      break;
+	    }
+	
+	}
+	
+	void handle_read_text_frame(const boost::system::error_code& err)
+	{
+	  if (!err)
+	    {
+	      std::istream is(&response_);
+	      if( is.peek() == 0xff )
+		{
+		  handler_.on_close();
+		}
+	      else
+		{
+		  std::stringstream os;
+		  while( is.peek() != 0xff ) os.put(is.get());
+		  os << std::flush;
+		  handler_.on_message( os.str() );
+		  is.get(); // skip 0xff
+		  
+		  if(response_.size() > 0)
+		    {
+		      check_frame_type();
+		    }
+		  else
+		    {
+		      boost::asio::async_read(socket_, response_,
+					      boost::asio::transfer_at_least(1),
+					      boost::bind(&protocol_impl::handle_read_frame_type, this	,
+							  boost::asio::placeholders::error));
+		    }
+		}
+	    }
+	  else
+	    {
+	      handler_.on_error( err.value(), err.message() );
+	    }
+	}
+	
+	
+	void handle_write_text_frame(const boost::system::error_code& err)
+	{
+	  if (err)
+	    handler_.on_error( err.value(), err.message() );
+	}
+
+
+
+
+
+private:
+
+  static const int INVALID_RESPONSE = 2;
+  static const int BAD_STATUS = 3;
+  static const int HANDSHAKE_FAILED = 4;
+  static const int BAD_FRAME = 5;
+
+
+	websocket_key_generator key_gen_;
+
+	boost::asio::streambuf request_;
+
+	boost::asio::streambuf response_;
+
+	AsyncStream& socket_;
+	ihandler& handler_;
+	url& url_;
+
+
+
+};
+
+class socket_client_impl
+	:public iclient
+{
+public:
+  static const int CONNECTING = 0;
+  static const int OPEN = 1;
+  static const int CLOSING = 2;
+  static const int CLOSED = 3;
+
+	socket_client_impl(ihandler& handler, const std::string& url, const std::string& protocol)
+		:ready_state_(CLOSED)
+		,handler_(handler)
+		,url_(url)
+		,resolver_(io_service_)
+		,socket_(io_service_)
+		,protocol_(socket_, handler_, url_)
+	{}
+
+	virtual void close()
+	{
+		ready_state_ = CLOSING;
+
+		protocol_.close();
+		io_service_.stop();
+		thread_->join();
+		delete thread_;
+
+		ready_state_ = CLOSED;
+	}
+
+	virtual void send( const std::string& msg )
+	{
+		protocol_.send( msg );
+	}
+
+	virtual int ready_state() const { return ready_state_; }
+
+	void connect()
+	{
+	  ready_state_ = CONNECTING;
+  
+	  handler_.set_client(this);
+
+	  try
+	    {
+	      url_.parse();
+	    }
+	  catch(const url_exception& e)
+	    {
+	      ready_state_ = CLOSED;
+	      handler_.on_error( INVALID_URI, e.what() );
+	     }
+
+
+	  boost::asio::ip::tcp::resolver::query query(url_.host(), url_.port());
+	  resolver_.async_resolve(query,
+					  boost::bind(&socket_client_impl::handle_resolve, this,
+				      boost::asio::placeholders::error,
+				      boost::asio::placeholders::iterator));
+
+	  thread_ = new boost::thread(boost::bind(&boost::asio::io_service::run, &io_service_));
+
+	}
+
+
+	void handle_resolve(const boost::system::error_code& err,
+	    boost::asio::ip::tcp::resolver::iterator endpoint_iterator)
+	{
+	  if (!err)
+	    {
+	      boost::asio::ip::tcp::endpoint endpoint = *endpoint_iterator;
+	      socket_.lowest_layer().async_connect(endpoint,
+			    boost::bind(&socket_client_impl::handle_connect, this,
+					boost::asio::placeholders::error, ++endpoint_iterator));
+	    }
+	  else
+	    {
+	      ready_state_ = CLOSED;
+	      handler_.on_error( err.value(), err.message() );
+	    }
+	}
+
+	void handle_connect(const boost::system::error_code& err,
+	    boost::asio::ip::tcp::resolver::iterator endpoint_iterator)
+	{
+	  if (!err)
+	    {
+			protocol_.open();
+	    }
+	  else if (endpoint_iterator != boost::asio::ip::tcp::resolver::iterator())
+	    {
+
+	      socket_.lowest_layer().close();
+	      boost::asio::ip::tcp::endpoint endpoint = *endpoint_iterator;
+	      socket_.lowest_layer().async_connect(endpoint,
+			    boost::bind(&socket_client_impl::handle_connect, this,
+			    boost::asio::placeholders::error, ++endpoint_iterator));
+	    }
+	  else
+	    {
+	      ready_state_ = CLOSED;
+	      handler_.on_error( err.value(), err.message() );
+	    }
+	}
+
+
+
+private:
+  static const int INVALID_URI = 1;
+
+	int ready_state_;
+	ihandler& handler_;
+	url url_;
+
+	boost::asio::io_service io_service_;
+
+	boost::asio::ip::tcp::resolver resolver_;
+	boost::asio::ip::tcp::socket socket_;
+	protocol_impl<boost::asio::ip::tcp::socket> protocol_;
+
+	boost::thread* thread_;
+
+
+};
+
+class ssl_socket_client_impl
+	:public iclient
+{
+public:
+
+	void connect()
+	{
+
+	}
+
+	virtual void close()
+	{
+
+	}
+
+	virtual void send( const std::string& msg )
+	{
+
+	}
+
+private:
 
 
 };
 
 
 
+class nclient
+  :public ihandler
+  ,public iclient
+{
+public:
+	nclient()
+		:client_impl_(NULL)
+	{
+	}
+ 
+	void connect(const std::string& url, const std::string& protocol = "")
+	{
+		client_impl_ = new socket_client_impl(*this, url, protocol);
+		static_cast<socket_client_impl*>(client_impl_)->connect();
+	}
+
+	virtual void close()
+	{
+		client_impl_->close();
+		delete client_impl_;
+		client_impl_ = NULL;
+	}
+
+	virtual void send(const std::string& msg)
+	{
+		client_impl_->send(msg);
+	}
+
+	virtual int ready_state() const
+	{
+		if( client_impl_ == NULL)
+			return client_impl::CLOSED;
+		else
+			return client_impl_->ready_state();
+
+	}
+
+	virtual void on_message( const std::string& msg) = 0;
+	virtual void on_open() = 0;
+	virtual void on_close() = 0;
+	virtual void on_error( int error_code, const std::string& msg ) = 0;
+
+private:
+	iclient* client_impl_;
+
+};
 
 
 
