@@ -6,7 +6,7 @@
 #include <boost/random.hpp>
 #include <boost/thread.hpp>
 #include <boost/asio.hpp>
-
+#include <boost/asio/ssl.hpp>
 
 namespace mwebsock
 {
@@ -207,36 +207,39 @@ private:
 
 
 
-class ihandler;
-class iclient;
+class iclient
+{
+public:
+	virtual ~iclient(){}
+
+	virtual void connect() = 0;
+	virtual void close() = 0;
+	virtual void send( const std::string& msg ) = 0;
+	virtual int ready_state() const = 0;
+
+};
+
 
 class ihandler
 {
 public:
-  void set_client(iclient* client)
-  {
-    client_ = client;
-  }
+	virtual ~ihandler(){}
 
-  virtual void on_message( const std::string& msg) = 0;
-  virtual void on_open() = 0;
-  virtual void on_close() = 0;
-  virtual void on_error( int error_code, const std::string& msg ) = 0;
+	virtual void on_message( const std::string& msg) = 0;
+	virtual void on_open() = 0;
+	virtual void on_close() = 0;
+	virtual void on_error( int error_code, const std::string& msg ) = 0;
+
+	void set_client(iclient* client)
+	{
+		client_ = client;
+	}
 
 protected:
-  iclient* client_;
+	iclient* client_;
 
 };
 
-class iclient
-{
-public:
-
-  virtual void close() = 0;
-  virtual void send( const std::string& msg ) = 0;
-  virtual int ready_state() const = 0;
-
-};
 
 
 template<typename AsyncStream>
@@ -564,7 +567,7 @@ public:
 
 	virtual int ready_state() const { return ready_state_; }
 
-	void connect()
+	virtual void connect()
 	{
 	  ready_state_ = CONNECTING;
   
@@ -656,11 +659,26 @@ class ssl_socket_client_impl
 	:public iclient
 {
 public:
+	typedef boost::asio::ssl::stream<boost::asio::ip::tcp::socket> socket_t;
 
-	void connect()
+  static const int CONNECTING = 0;
+  static const int OPEN = 1;
+  static const int CLOSING = 2;
+  static const int CLOSED = 3;
+
+	ssl_socket_client_impl(ihandler& handler, const std::string& url, const std::string& protocol, const std::string& verify_file)
+		:ready_state_(CLOSED)
+		,handler_(handler)
+		,url_(url)
+		,resolver_(io_service_)
+		,context_(io_service_, boost::asio::ssl::context::sslv23)
+		,socket_(io_service_, context_)
+		,protocol_(socket_, handler_, url_)
 	{
-
+		context_.set_verify_mode(boost::asio::ssl::context::verify_peer);
+	    context_.load_verify_file(verify_file);
 	}
+
 
 	virtual void close()
 	{
@@ -672,7 +690,29 @@ public:
 
 	}
 
+	virtual int ready_state() const { return ready_state_; }
+
+	virtual void connect()
+	{
+
+	}
+
 private:
+  static const int INVALID_URI = 1;
+
+	int ready_state_;
+
+	ihandler& handler_;
+	url url_;
+
+	boost::asio::io_service io_service_;
+
+	boost::asio::ip::tcp::resolver resolver_;
+	boost::asio::ssl::context context_;
+	socket_t socket_;
+	protocol_impl<socket_t> protocol_;
+
+	boost::thread* thread_;
 
 
 };
@@ -681,33 +721,36 @@ private:
 
 class nclient
   :public ihandler
-  ,public iclient
 {
 public:
 	nclient()
 		:client_impl_(NULL)
 	{
 	}
- 
+
+	virtual ~nclient(){}
+
 	void connect(const std::string& url, const std::string& protocol = "")
 	{
-		client_impl_ = new socket_client_impl(*this, url, protocol);
-		static_cast<socket_client_impl*>(client_impl_)->connect();
+		if(true)
+			client_impl_ = new socket_client_impl(*this, url, protocol);
+
+		client_impl_->connect();
 	}
 
-	virtual void close()
+	void close()
 	{
 		client_impl_->close();
 		delete client_impl_;
 		client_impl_ = NULL;
 	}
 
-	virtual void send(const std::string& msg)
+	void send(const std::string& msg)
 	{
 		client_impl_->send(msg);
 	}
 
-	virtual int ready_state() const
+	int ready_state() const
 	{
 		if( client_impl_ == NULL)
 			return client_impl::CLOSED;
@@ -722,6 +765,7 @@ public:
 	virtual void on_error( int error_code, const std::string& msg ) = 0;
 
 private:
+	url url_;
 	iclient* client_impl_;
 
 };

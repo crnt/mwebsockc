@@ -1,6 +1,6 @@
 PSDK_HOME = C:\Program Files\Microsoft SDKs\Windows\v7.1
 BOST_HOME = C:\boost_1_44_0
-
+OSSL_HOME = C:\Program Files\OpenSSL-Win32
 
 !IF "$(BUILD)" == ""
 BUILD = debug
@@ -80,6 +80,7 @@ libmwebsockc.lib: \
 		/NOLOGO \
 		/LIBPATH:"$(PSDK_HOME)\Lib$(LIB_ARCH_DIR)" \
 		/LIBPATH:"$(BOST_HOME)\stage\lib" \
+		/LIBPATH:"$(OSSL_HOME)\lib\VC\static" \
 		/LTCG \
 		$**
 
@@ -93,6 +94,8 @@ mddriver.exe: \
 		/NOLOGO \
 		/LIBPATH:"$(PSDK_HOME)\Lib$(LIB_ARCH_DIR)" \
 		$(LINK_OPTS) \
+		libeay32MT.lib
+		ssleay32MT.lib
 		$**
 
 
@@ -121,6 +124,7 @@ mddriver.exe: \
 		/I "..\include" \
 		/I "$(PSDK_HOME)\Include" \
 		/I "$(BOST_HOME)" \
+		/I "$(OSSL_HOME)\include" \
 		$(CL_OPTS) \
 		$*.cpp
 
