@@ -31,9 +31,11 @@ class url
 {
 public:
 
+  url();
   url(const std::string& raw);
 
   void parse();
+  void parse(const std::string& raw);
 
   const std::string& raw() const;
 
@@ -539,7 +541,7 @@ public:
   static const int CLOSING = 2;
   static const int CLOSED = 3;
 
-	socket_client_impl(ihandler& handler, const std::string& url, const std::string& protocol)
+	socket_client_impl(ihandler& handler, url& url, const std::string& protocol)
 		:ready_state_(CLOSED)
 		,handler_(handler)
 		,url_(url)
@@ -572,17 +574,6 @@ public:
 	  ready_state_ = CONNECTING;
   
 	  handler_.set_client(this);
-
-	  try
-	    {
-	      url_.parse();
-	    }
-	  catch(const url_exception& e)
-	    {
-	      ready_state_ = CLOSED;
-	      handler_.on_error( INVALID_URI, e.what() );
-	     }
-
 
 	  boost::asio::ip::tcp::resolver::query query(url_.host(), url_.port());
 	  resolver_.async_resolve(query,
@@ -666,7 +657,7 @@ public:
   static const int CLOSING = 2;
   static const int CLOSED = 3;
 
-	ssl_socket_client_impl(ihandler& handler, const std::string& url, const std::string& protocol, const std::string& verify_file)
+	ssl_socket_client_impl(ihandler& handler, url& url, const std::string& protocol, const std::string& verify_file)
 		:ready_state_(CLOSED)
 		,handler_(handler)
 		,url_(url)
@@ -682,20 +673,94 @@ public:
 
 	virtual void close()
 	{
+		ready_state_ = CLOSING;
 
+		protocol_.close();
+		io_service_.stop();
+		thread_->join();
+		delete thread_;
+
+		ready_state_ = CLOSED;
 	}
 
 	virtual void send( const std::string& msg )
 	{
-
+		protocol_.send( msg );
 	}
 
 	virtual int ready_state() const { return ready_state_; }
 
 	virtual void connect()
 	{
+	  ready_state_ = CONNECTING;
+  
+	  handler_.set_client(this);
+
+	  boost::asio::ip::tcp::resolver::query query(url_.host(), url_.port());
+	  resolver_.async_resolve(query,
+					  boost::bind(&ssl_socket_client_impl::handle_resolve, this,
+				      boost::asio::placeholders::error,
+				      boost::asio::placeholders::iterator));
+
+	  thread_ = new boost::thread(boost::bind(&boost::asio::io_service::run, &io_service_));
 
 	}
+
+	void handle_resolve(const boost::system::error_code& err,
+	    boost::asio::ip::tcp::resolver::iterator endpoint_iterator)
+	{
+	  if (!err)
+	    {
+	      boost::asio::ip::tcp::endpoint endpoint = *endpoint_iterator;
+	      socket_.lowest_layer().async_connect(endpoint,
+			    boost::bind(&ssl_socket_client_impl::handle_connect, this,
+					boost::asio::placeholders::error, ++endpoint_iterator));
+	    }
+	  else
+	    {
+	      ready_state_ = CLOSED;
+	      handler_.on_error( err.value(), err.message() );
+	    }
+	}
+
+	void handle_connect(const boost::system::error_code& err,
+	    boost::asio::ip::tcp::resolver::iterator endpoint_iterator)
+	{
+	  if (!err)
+	    {
+           socket_.async_handshake(boost::asio::ssl::stream_base::client,
+               boost::bind(&ssl_socket_client_impl::handle_handshake, this,
+               boost::asio::placeholders::error));
+	    }
+	  else if (endpoint_iterator != boost::asio::ip::tcp::resolver::iterator())
+	    {
+
+	      socket_.lowest_layer().close();
+	      boost::asio::ip::tcp::endpoint endpoint = *endpoint_iterator;
+	      socket_.lowest_layer().async_connect(endpoint,
+			    boost::bind(&ssl_socket_client_impl::handle_connect, this,
+			    boost::asio::placeholders::error, ++endpoint_iterator));
+	    }
+	  else
+	    {
+	      ready_state_ = CLOSED;
+	      handler_.on_error( err.value(), err.message() );
+	    }
+	}
+
+   void handle_handshake(const boost::system::error_code& err)
+  {
+    if (!err)
+    {
+			protocol_.open();
+    }
+    else
+    {
+	      ready_state_ = CLOSED;
+	      handler_.on_error( err.value(), err.message() );
+    }
+  }
+
 
 private:
   static const int INVALID_URI = 1;
@@ -732,8 +797,23 @@ public:
 
 	void connect(const std::string& url, const std::string& protocol = "")
 	{
-		if(true)
-			client_impl_ = new socket_client_impl(*this, url, protocol);
+		try
+		{
+			url_.parse(url);
+		}
+		catch (const url_exception&)
+		{
+			/* do nothing */
+		}
+
+		if(url_.protocol() == "ws")
+		{
+			client_impl_ = new socket_client_impl(*this, url_, protocol);
+		}
+		else if(url_.protocol() == "wss")
+		{
+			client_impl_ = new ssl_socket_client_impl(*this, url_, protocol, verify_file_);
+		}
 
 		client_impl_->connect();
 	}
@@ -759,6 +839,11 @@ public:
 
 	}
 
+	void set_verify_file(const std::string& name)
+	{
+		verify_file_ = name;
+	}
+
 	virtual void on_message( const std::string& msg) = 0;
 	virtual void on_open() = 0;
 	virtual void on_close() = 0;
@@ -767,7 +852,7 @@ public:
 private:
 	url url_;
 	iclient* client_impl_;
-
+	std::string verify_file_;
 };
 
 

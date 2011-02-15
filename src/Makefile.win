@@ -82,6 +82,8 @@ libmwebsockc.lib: \
 		/LIBPATH:"$(BOST_HOME)\stage\lib" \
 		/LIBPATH:"$(OSSL_HOME)\lib\VC\static" \
 		/LTCG \
+		libeay32MT.lib \
+		ssleay32MT.lib \
 		$**
 
 
@@ -94,8 +96,6 @@ mddriver.exe: \
 		/NOLOGO \
 		/LIBPATH:"$(PSDK_HOME)\Lib$(LIB_ARCH_DIR)" \
 		$(LINK_OPTS) \
-		libeay32MT.lib
-		ssleay32MT.lib
 		$**
 
 

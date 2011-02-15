@@ -1,5 +1,6 @@
 PSDK_HOME = C:\Program Files\Microsoft SDKs\Windows\v7.1
 BOST_HOME = C:\boost_1_44_0
+OSSL_HOME = C:\Program Files\OpenSSL-Win32
 
 
 !IF "$(BUILD)" == ""
@@ -81,6 +82,9 @@ test.exe: \
 		/LIBPATH:"$(BOST_HOME)\stage\lib" \
 		$(LINK_OPTS) \
 		..\dist\libmwebsockc.lib \
+		user32.lib \
+		advapi32.lib \
+		Gdi32.lib \
 		$**
 
 .cpp.obj:
@@ -95,6 +99,7 @@ test.exe: \
 		/I "..\include" \
 		/I "$(PSDK_HOME)\Include" \
 		/I "$(BOST_HOME)" \
+		/I "$(OSSL_HOME)\include" \
 		$(CL_OPTS) \
 		$*.cpp
 

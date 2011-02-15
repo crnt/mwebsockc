@@ -39,9 +39,20 @@ unsigned int random::next_int(unsigned int max)
 }
 
 
+url::url()
+  :raw_("")
+{
+}
+
 url::url(const std::string& raw)
   :raw_(raw)
 {
+}
+
+void url::parse( const std::string& raw )
+{
+	raw_ = raw;
+	parse();
 }
 
 void url::parse()
