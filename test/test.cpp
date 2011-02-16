@@ -63,6 +63,17 @@ int main(int argc, char** argv)
 	      return 0;
 	    }
 	    break;
+	  case 'u':
+	    {
+	      client.close();
+	      std::cout << ">> client closed." << std::endl;
+	    }
+	    break;
+	  case 'c':
+	    {
+	      client.connect("ws://mitsuji.org/mchat/ws");;
+	    }
+	    break;
 	  default:
 	    {
 	      client.send("m:" + line );

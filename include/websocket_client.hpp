@@ -209,12 +209,11 @@ private:
 
 
 
-class iclient
+class isession
 {
 public:
-	virtual ~iclient(){}
+	virtual ~isession(){}
 
-	virtual void connect() = 0;
 	virtual void close() = 0;
 	virtual void send( const std::string& msg ) = 0;
 	virtual int ready_state() const = 0;
@@ -232,24 +231,24 @@ public:
 	virtual void on_close() = 0;
 	virtual void on_error( int error_code, const std::string& msg ) = 0;
 
-	void set_client(iclient* client)
+	void set_client(isession* client)
 	{
 		client_ = client;
 	}
 
 protected:
-	iclient* client_;
+	isession* client_;
 
 };
 
 
 
 template<typename AsyncStream>
-class protocol_impl
+class protocol
 {
 public:
 
-	protocol_impl(AsyncStream& socket, ihandler& handler, url& url )
+	protocol(AsyncStream& socket, ihandler& handler, url& url )
 		:socket_(socket)
 		,handler_(handler)
 		,url_(url)
@@ -276,7 +275,7 @@ public:
 		os.flush();
 
 		boost::asio::async_write(socket_, request_,
-		     boost::bind(&protocol_impl::handle_write_text_frame, this,
+		     boost::bind(&protocol::handle_write_text_frame, this,
 		     boost::asio::placeholders::error));
 
 	}
@@ -296,7 +295,7 @@ public:
 		os << std::flush;
 
 		boost::asio::async_write(socket_, request_,
-		     boost::bind(&protocol_impl::handle_write_request, this,
+		     boost::bind(&protocol::handle_write_request, this,
 		     boost::asio::placeholders::error));
 
 	}
@@ -307,7 +306,7 @@ public:
 	  if (!err)
 	    {
 	      boost::asio::async_read_until(socket_, response_, "\r\n",
-			    boost::bind(&protocol_impl::handle_read_status_line, this,	
+			    boost::bind(&protocol::handle_read_status_line, this,	
 			   boost::asio::placeholders::error));
 	    }
 	  else
@@ -339,7 +338,7 @@ public:
 		}
 	
 	      boost::asio::async_read_until(socket_, response_, "\r\n\r\n",
-					    boost::bind(&protocol_impl::handle_read_headers, this,
+					    boost::bind(&protocol::handle_read_headers, this,
 							boost::asio::placeholders::error));
 	    }
 	  else
@@ -367,7 +366,7 @@ public:
 		{
 		  boost::asio::async_read(socket_, response_,
 					  boost::asio::transfer_at_least(16),
-					  boost::bind(&protocol_impl::handle_read_key, this,
+					  boost::bind(&protocol::handle_read_key, this,
 						      boost::asio::placeholders::error));
 		}
 	    }
@@ -412,7 +411,7 @@ public:
 		{
 		  boost::asio::async_read(socket_, response_,
 					  boost::asio::transfer_at_least(1),
-					  boost::bind(&protocol_impl::handle_read_frame_type, this,
+					  boost::bind(&protocol::handle_read_frame_type, this,
 						      boost::asio::placeholders::error));
 		}
 	    }
@@ -444,7 +443,7 @@ public:
 	    case 0x00:
 	      {
 		boost::asio::async_read_until(socket_, response_, 0xff,
-					      boost::bind(&protocol_impl::handle_read_text_frame, this	,
+					      boost::bind(&protocol::handle_read_text_frame, this	,
 							  boost::asio::placeholders::error));
 	      }
 	      break;
@@ -488,7 +487,7 @@ public:
 		    {
 		      boost::asio::async_read(socket_, response_,
 					      boost::asio::transfer_at_least(1),
-					      boost::bind(&protocol_impl::handle_read_frame_type, this	,
+					      boost::bind(&protocol::handle_read_frame_type, this	,
 							  boost::asio::placeholders::error));
 		    }
 		}
@@ -532,34 +531,39 @@ private:
 
 };
 
-class socket_client_impl
-	:public iclient
+class session
+	:public isession
 {
 public:
-  static const int CONNECTING = 0;
-  static const int OPEN = 1;
-  static const int CLOSING = 2;
-  static const int CLOSED = 3;
+	static const int CONNECTING = 0;
+	static const int OPEN = 1;
+	static const int CLOSING = 2;
+	static const int CLOSED = 3;
 
-	socket_client_impl(ihandler& handler, url& url, const std::string& protocol)
+	session(boost::asio::io_service& io_service,
+	        ihandler& handler,
+	        url& url,
+	        const std::string& protocol )
 		:ready_state_(CLOSED)
 		,handler_(handler)
 		,url_(url)
+		,io_service_(io_service)
 		,resolver_(io_service_)
 		,socket_(io_service_)
 		,protocol_(socket_, handler_, url_)
-	{}
+	{
+		handler_.set_client(this);
+
+		boost::asio::ip::tcp::resolver::query query(url_.host(), url_.port());
+		resolver_.async_resolve(query,
+		          boost::bind(&session::handle_resolve, this,
+		          boost::asio::placeholders::error,
+		          boost::asio::placeholders::iterator));
+	}
 
 	virtual void close()
 	{
-		ready_state_ = CLOSING;
-
 		protocol_.close();
-		io_service_.stop();
-		thread_->join();
-		delete thread_;
-
-		ready_state_ = CLOSED;
 	}
 
 	virtual void send( const std::string& msg )
@@ -569,23 +573,6 @@ public:
 
 	virtual int ready_state() const { return ready_state_; }
 
-	virtual void connect()
-	{
-	  ready_state_ = CONNECTING;
-  
-	  handler_.set_client(this);
-
-	  boost::asio::ip::tcp::resolver::query query(url_.host(), url_.port());
-	  resolver_.async_resolve(query,
-					  boost::bind(&socket_client_impl::handle_resolve, this,
-				      boost::asio::placeholders::error,
-				      boost::asio::placeholders::iterator));
-
-	  thread_ = new boost::thread(boost::bind(&boost::asio::io_service::run, &io_service_));
-
-	}
-
-
 	void handle_resolve(const boost::system::error_code& err,
 	    boost::asio::ip::tcp::resolver::iterator endpoint_iterator)
 	{
@@ -593,7 +580,7 @@ public:
 	    {
 	      boost::asio::ip::tcp::endpoint endpoint = *endpoint_iterator;
 	      socket_.lowest_layer().async_connect(endpoint,
-			    boost::bind(&socket_client_impl::handle_connect, this,
+			    boost::bind(&session::handle_connect, this,
 					boost::asio::placeholders::error, ++endpoint_iterator));
 	    }
 	  else
@@ -616,7 +603,7 @@ public:
 	      socket_.lowest_layer().close();
 	      boost::asio::ip::tcp::endpoint endpoint = *endpoint_iterator;
 	      socket_.lowest_layer().async_connect(endpoint,
-			    boost::bind(&socket_client_impl::handle_connect, this,
+			    boost::bind(&session::handle_connect, this,
 			    boost::asio::placeholders::error, ++endpoint_iterator));
 	    }
 	  else
@@ -629,59 +616,60 @@ public:
 
 
 private:
-  static const int INVALID_URI = 1;
+ 	static const int INVALID_URI = 1;
 
 	int ready_state_;
 	ihandler& handler_;
 	url url_;
 
-	boost::asio::io_service io_service_;
+	boost::asio::io_service& io_service_;
 
 	boost::asio::ip::tcp::resolver resolver_;
 	boost::asio::ip::tcp::socket socket_;
-	protocol_impl<boost::asio::ip::tcp::socket> protocol_;
-
-	boost::thread* thread_;
+	protocol<boost::asio::ip::tcp::socket> protocol_;
 
 
 };
 
-class ssl_socket_client_impl
-	:public iclient
+
+class ssl_session
+	:public isession
 {
 public:
 	typedef boost::asio::ssl::stream<boost::asio::ip::tcp::socket> socket_t;
 
-  static const int CONNECTING = 0;
-  static const int OPEN = 1;
-  static const int CLOSING = 2;
-  static const int CLOSED = 3;
+	static const int CONNECTING = 0;
+	static const int OPEN = 1;
+	static const int CLOSING = 2;
+	static const int CLOSED = 3;
 
-	ssl_socket_client_impl(ihandler& handler, url& url, const std::string& protocol, const std::string& verify_file)
+	ssl_session(boost::asio::io_service& io_service,
+	            boost::asio::ssl::context& context,
+	            ihandler& handler,
+	            url& url,
+	            const std::string& protocol)
 		:ready_state_(CLOSED)
 		,handler_(handler)
 		,url_(url)
+		,io_service_(io_service)
 		,resolver_(io_service_)
-		,context_(io_service_, boost::asio::ssl::context::sslv23)
-		,socket_(io_service_, context_)
+		,socket_(io_service_, context)
 		,protocol_(socket_, handler_, url_)
 	{
-		context_.set_verify_mode(boost::asio::ssl::context::verify_peer);
-	    context_.load_verify_file(verify_file);
-	}
+	  handler_.set_client(this);
 
+	  boost::asio::ip::tcp::resolver::query query(url_.host(), url_.port());
+	  resolver_.async_resolve(query,
+					  boost::bind(&ssl_session::handle_resolve, this,
+				      boost::asio::placeholders::error,
+				      boost::asio::placeholders::iterator));
+	}
 
 	virtual void close()
 	{
-		ready_state_ = CLOSING;
-
 		protocol_.close();
-		io_service_.stop();
-		thread_->join();
-		delete thread_;
-
-		ready_state_ = CLOSED;
 	}
+
 
 	virtual void send( const std::string& msg )
 	{
@@ -690,21 +678,6 @@ public:
 
 	virtual int ready_state() const { return ready_state_; }
 
-	virtual void connect()
-	{
-	  ready_state_ = CONNECTING;
-  
-	  handler_.set_client(this);
-
-	  boost::asio::ip::tcp::resolver::query query(url_.host(), url_.port());
-	  resolver_.async_resolve(query,
-					  boost::bind(&ssl_socket_client_impl::handle_resolve, this,
-				      boost::asio::placeholders::error,
-				      boost::asio::placeholders::iterator));
-
-	  thread_ = new boost::thread(boost::bind(&boost::asio::io_service::run, &io_service_));
-
-	}
 
 	void handle_resolve(const boost::system::error_code& err,
 	    boost::asio::ip::tcp::resolver::iterator endpoint_iterator)
@@ -713,7 +686,7 @@ public:
 	    {
 	      boost::asio::ip::tcp::endpoint endpoint = *endpoint_iterator;
 	      socket_.lowest_layer().async_connect(endpoint,
-			    boost::bind(&ssl_socket_client_impl::handle_connect, this,
+			    boost::bind(&ssl_session::handle_connect, this,
 					boost::asio::placeholders::error, ++endpoint_iterator));
 	    }
 	  else
@@ -729,7 +702,7 @@ public:
 	  if (!err)
 	    {
            socket_.async_handshake(boost::asio::ssl::stream_base::client,
-               boost::bind(&ssl_socket_client_impl::handle_handshake, this,
+               boost::bind(&ssl_session::handle_handshake, this,
                boost::asio::placeholders::error));
 	    }
 	  else if (endpoint_iterator != boost::asio::ip::tcp::resolver::iterator())
@@ -738,7 +711,7 @@ public:
 	      socket_.lowest_layer().close();
 	      boost::asio::ip::tcp::endpoint endpoint = *endpoint_iterator;
 	      socket_.lowest_layer().async_connect(endpoint,
-			    boost::bind(&ssl_socket_client_impl::handle_connect, this,
+			    boost::bind(&ssl_session::handle_connect, this,
 			    boost::asio::placeholders::error, ++endpoint_iterator));
 	    }
 	  else
@@ -766,21 +739,17 @@ private:
   static const int INVALID_URI = 1;
 
 	int ready_state_;
-
 	ihandler& handler_;
 	url url_;
 
-	boost::asio::io_service io_service_;
+	boost::asio::io_service& io_service_;
 
 	boost::asio::ip::tcp::resolver resolver_;
-	boost::asio::ssl::context context_;
 	socket_t socket_;
-	protocol_impl<socket_t> protocol_;
-
-	boost::thread* thread_;
-
+	protocol<socket_t> protocol_;
 
 };
+
 
 
 
@@ -789,7 +758,8 @@ class nclient
 {
 public:
 	nclient()
-		:client_impl_(NULL)
+		:p_client_impl_(NULL)
+		,p_context_(NULL)
 	{
 	}
 
@@ -808,34 +778,55 @@ public:
 
 		if(url_.protocol() == "ws")
 		{
-			client_impl_ = new socket_client_impl(*this, url_, protocol);
+			p_io_service_ = new boost::asio::io_service();
+
+			p_client_impl_ = new session(*p_io_service_, *this, url_, protocol);
+			p_thread_ = new boost::thread(boost::bind(&boost::asio::io_service::run, p_io_service_));
+
 		}
 		else if(url_.protocol() == "wss")
 		{
-			client_impl_ = new ssl_socket_client_impl(*this, url_, protocol, verify_file_);
+			p_io_service_ = new boost::asio::io_service();
+
+			p_context_ = new boost::asio::ssl::context(*p_io_service_, boost::asio::ssl::context::sslv23);
+			p_context_->set_verify_mode(boost::asio::ssl::context::verify_peer);
+			p_context_->load_verify_file(verify_file_);
+
+			p_client_impl_ = new ssl_session(*p_io_service_, *p_context_, *this, url_, protocol);
+
+			p_thread_ = new boost::thread(boost::bind(&boost::asio::io_service::run, p_io_service_));
+
 		}
 
-		client_impl_->connect();
 	}
 
 	void close()
 	{
-		client_impl_->close();
-		delete client_impl_;
-		client_impl_ = NULL;
+		p_client_impl_->close();
+		delete p_client_impl_;
+		p_client_impl_ = NULL;
+		p_io_service_->stop();
+		p_thread_->join();
+		if(p_context_ != NULL)
+		{
+			delete p_context_;
+			p_context_ = NULL;
+		}
+		delete p_io_service_;
+		delete p_thread_;
 	}
 
 	void send(const std::string& msg)
 	{
-		client_impl_->send(msg);
+		p_client_impl_->send(msg);
 	}
 
 	int ready_state() const
 	{
-		if( client_impl_ == NULL)
-			return client_impl::CLOSED;
+		if( p_client_impl_ == NULL)
+			return session::CLOSED;
 		else
-			return client_impl_->ready_state();
+			return p_client_impl_->ready_state();
 
 	}
 
@@ -851,8 +842,13 @@ public:
 
 private:
 	url url_;
-	iclient* client_impl_;
 	std::string verify_file_;
+
+	boost::asio::io_service* p_io_service_;
+	boost::thread* p_thread_;
+	isession* p_client_impl_;
+
+	boost::asio::ssl::context* p_context_;
 };
 
 
