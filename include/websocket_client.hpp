@@ -566,6 +566,7 @@ public:
 		protocol_.close();
 	}
 
+
 	virtual void send( const std::string& msg )
 	{
 		protocol_.send( msg );
@@ -730,6 +731,7 @@ public:
     else
     {
 	      ready_state_ = CLOSED;
+std::cout << "error:" << std::endl;
 	      handler_.on_error( err.value(), err.message() );
     }
   }
@@ -758,8 +760,6 @@ class nclient
 {
 public:
 	nclient()
-		:p_client_impl_(NULL)
-		,p_context_(NULL)
 	{
 	}
 
@@ -776,57 +776,55 @@ public:
 			/* do nothing */
 		}
 
+		p_io_service_.reset(new boost::asio::io_service());
+
 		if(url_.protocol() == "ws")
 		{
-			p_io_service_ = new boost::asio::io_service();
-
-			p_client_impl_ = new session(*p_io_service_, *this, url_, protocol);
-			p_thread_ = new boost::thread(boost::bind(&boost::asio::io_service::run, p_io_service_));
-
+			p_session_.reset(
+			       new session(*(p_io_service_.get()), *this, url_, protocol));
 		}
 		else if(url_.protocol() == "wss")
 		{
-			p_io_service_ = new boost::asio::io_service();
+			p_context_.reset(
+			  new boost::asio::ssl::context(
+			    *(p_io_service_.get()), boost::asio::ssl::context::sslv23));
+			p_context_.get()
+			  ->set_verify_mode(boost::asio::ssl::context::verify_peer);
+			p_context_.get()
+			  ->load_verify_file(verify_file_);
 
-			p_context_ = new boost::asio::ssl::context(*p_io_service_, boost::asio::ssl::context::sslv23);
-			p_context_->set_verify_mode(boost::asio::ssl::context::verify_peer);
-			p_context_->load_verify_file(verify_file_);
-
-			p_client_impl_ = new ssl_session(*p_io_service_, *p_context_, *this, url_, protocol);
-
-			p_thread_ = new boost::thread(boost::bind(&boost::asio::io_service::run, p_io_service_));
-
+			p_session_.reset(
+			  new ssl_session(
+			    *(p_io_service_.get()), *(p_context_.get()),
+			    *this, url_, protocol));
 		}
+
+		boost::thread(boost::bind(
+		    &boost::asio::io_service::run, p_io_service_.get()));
 
 	}
 
 	void close()
 	{
-		p_client_impl_->close();
-		delete p_client_impl_;
-		p_client_impl_ = NULL;
-		p_io_service_->stop();
-		p_thread_->join();
-		if(p_context_ != NULL)
-		{
-			delete p_context_;
-			p_context_ = NULL;
-		}
-		delete p_io_service_;
-		delete p_thread_;
+		p_session_.get()->close();
+		p_io_service_.get()->stop();
+
+		p_session_.reset();
+		p_context_.reset();
+		p_io_service_.reset();
 	}
 
 	void send(const std::string& msg)
 	{
-		p_client_impl_->send(msg);
+		p_session_.get()->send(msg);
 	}
 
 	int ready_state() const
 	{
-		if( p_client_impl_ == NULL)
+		if( p_session_.get() == NULL)
 			return session::CLOSED;
 		else
-			return p_client_impl_->ready_state();
+			return p_session_.get()->ready_state();
 
 	}
 
@@ -844,11 +842,10 @@ private:
 	url url_;
 	std::string verify_file_;
 
-	boost::asio::io_service* p_io_service_;
-	boost::thread* p_thread_;
-	isession* p_client_impl_;
+	std::auto_ptr<boost::asio::io_service> p_io_service_;
+	std::auto_ptr<boost::asio::ssl::context> p_context_;
+	std::auto_ptr<isession> p_session_;
 
-	boost::asio::ssl::context* p_context_;
 };
 
 

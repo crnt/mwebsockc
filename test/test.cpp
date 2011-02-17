@@ -47,7 +47,8 @@ int main(int argc, char** argv)
   try
     {
       chat_client client(argv[1]);
-      client.connect("ws://mitsuji.org/mchat/ws");
+      client.set_verify_file("..\\dist\\org.mitsuji.server.crt");
+      client.connect("wss://mitsuji.org/mchat/ws");
 
       std::string line;
       while(std::getline(std::cin, line ))
@@ -71,7 +72,7 @@ int main(int argc, char** argv)
 	    break;
 	  case 'c':
 	    {
-	      client.connect("ws://mitsuji.org/mchat/ws");;
+	      client.connect("ws://mitsuji.org/mchat/ws");
 	    }
 	    break;
 	  default:
