@@ -731,7 +731,6 @@ public:
     else
     {
 	      ready_state_ = CLOSED;
-std::cout << "error:" << std::endl;
 	      handler_.on_error( err.value(), err.message() );
     }
   }
@@ -787,7 +786,9 @@ public:
 		{
 			p_context_.reset(
 			  new boost::asio::ssl::context(
-			    *(p_io_service_.get()), boost::asio::ssl::context::sslv23));
+			    *(p_io_service_.get()), boost::asio::ssl::context::sslv3));
+//			p_context_.get()
+//			  ->set_verify_mode(boost::asio::ssl::context::verify_none);
 			p_context_.get()
 			  ->set_verify_mode(boost::asio::ssl::context::verify_peer);
 			p_context_.get()
