@@ -258,7 +258,7 @@ public:
 	{
 		std::ostream os(&request_);
 		os.put(0x00);
-		os.put(0xff);
+		os.put(-1);
 		os.flush();
 
 		// synchronized operation
@@ -271,12 +271,14 @@ public:
 		std::ostream os(&request_);
 		os.put(0x00);
 		os << msg;
-		os.put(0xff);
+		os.put(-1);
 		os.flush();
 
+std::cout << "send1" << std::endl;
 		boost::asio::async_write(socket_, request_,
 		     boost::bind(&protocol::handle_write_text_frame, this,
 		     boost::asio::placeholders::error));
+std::cout << "send2" << std::endl;
 
 	}
 
@@ -301,10 +303,11 @@ public:
 	}
 
 
-	void handle_write_request(const boost::system::error_code& err)	
+	void handle_write_request(const boost::system::error_code& err)
 	{
 	  if (!err)
 	    {
+
 	      boost::asio::async_read_until(socket_, response_, "\r\n",
 			    boost::bind(&protocol::handle_read_status_line, this,	
 			   boost::asio::placeholders::error));
@@ -442,7 +445,7 @@ public:
 	    {
 	    case 0x00:
 	      {
-		boost::asio::async_read_until(socket_, response_, 0xff,
+		boost::asio::async_read_until(socket_, response_, -1,
 					      boost::bind(&protocol::handle_read_text_frame, this	,
 							  boost::asio::placeholders::error));
 	      }
@@ -501,6 +504,7 @@ public:
 	
 	void handle_write_text_frame(const boost::system::error_code& err)
 	{
+
 	  if (err)
 	    handler_.on_error( err.value(), err.message() );
 	}
