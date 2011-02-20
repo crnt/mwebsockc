@@ -258,7 +258,7 @@ public:
 	{
 		std::ostream os(&request_);
 		os.put(0x00);
-		os.put(-1);
+		os.put(0xff);
 		os.flush();
 
 		// synchronized operation
@@ -271,14 +271,12 @@ public:
 		std::ostream os(&request_);
 		os.put(0x00);
 		os << msg;
-		os.put(-1);
+		os.put(0xff);
 		os.flush();
 
-std::cout << "send1" << std::endl;
 		boost::asio::async_write(socket_, request_,
 		     boost::bind(&protocol::handle_write_text_frame, this,
 		     boost::asio::placeholders::error));
-std::cout << "send2" << std::endl;
 
 	}
 
@@ -445,7 +443,7 @@ std::cout << "send2" << std::endl;
 	    {
 	    case 0x00:
 	      {
-		boost::asio::async_read_until(socket_, response_, -1,
+		boost::asio::async_read_until(socket_, response_, 0xff,
 					      boost::bind(&protocol::handle_read_text_frame, this	,
 							  boost::asio::placeholders::error));
 	      }
@@ -505,9 +503,31 @@ std::cout << "send2" << std::endl;
 	void handle_write_text_frame(const boost::system::error_code& err)
 	{
 
-	  if (err)
-	    handler_.on_error( err.value(), err.message() );
+	  if (!err)
+	    {
+		std::ostream os(&request_);
+		os.put(0x00);
+		os.put(0x00);
+		os.put(0xff);
+		os.flush();
+
+		boost::asio::async_write(socket_, request_,
+		     boost::bind(&protocol::handle_write_text_frame_dummy, this,
+		     boost::asio::placeholders::error));
+
+	    }
+	  else
+	    {
+	      handler_.on_error( err.value(), err.message() );
+	    }
 	}
+
+  void handle_write_text_frame_dummy(const boost::system::error_code& err)
+  {
+	  if (err)
+	      handler_.on_error( err.value(), err.message() );
+
+  }
 
 
 
@@ -791,12 +811,12 @@ public:
 			p_context_.reset(
 			  new boost::asio::ssl::context(
 			    *(p_io_service_.get()), boost::asio::ssl::context::sslv3));
+			p_context_.get()
+			  ->set_verify_mode(boost::asio::ssl::context::verify_none);
 //			p_context_.get()
-//			  ->set_verify_mode(boost::asio::ssl::context::verify_none);
-			p_context_.get()
-			  ->set_verify_mode(boost::asio::ssl::context::verify_peer);
-			p_context_.get()
-			  ->load_verify_file(verify_file_);
+//			  ->set_verify_mode(boost::asio::ssl::context::verify_peer);
+//			p_context_.get()
+//			  ->load_verify_file(verify_file_);
 
 			p_session_.reset(
 			  new ssl_session(

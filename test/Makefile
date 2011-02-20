@@ -34,6 +34,8 @@ test: \
 		-lstdc++ \
 		-lboost_system \
 		-lboost_thread \
+		-lssl \
+		-lcrypto \
 		$(LINK_OPTS) \
 		../dist/libmwebsockc.a \
 		test.o
