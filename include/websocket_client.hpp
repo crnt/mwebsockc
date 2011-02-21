@@ -505,6 +505,7 @@ public:
 
 	  if (!err)
 	    {
+
 		std::ostream os(&request_);
 		os.put(0x00);
 		os.put(0x00);
@@ -782,7 +783,9 @@ class nclient
   :public ihandler
 {
 public:
-	nclient()
+	nclient( boost::asio::ssl::context::method ssl_method
+	         = boost::asio::ssl::context::sslv3 )
+		:context_( io_service_, ssl_method )
 	{
 	}
 
@@ -799,44 +802,45 @@ public:
 			/* do nothing */
 		}
 
-		p_io_service_.reset(new boost::asio::io_service());
-
 		if(url_.protocol() == "ws")
 		{
 			p_session_.reset(
-			       new session(*(p_io_service_.get()), *this, url_, protocol));
+			       new session(io_service_, *this, url_, protocol));
 		}
 		else if(url_.protocol() == "wss")
 		{
-			p_context_.reset(
-			  new boost::asio::ssl::context(
-			    *(p_io_service_.get()), boost::asio::ssl::context::sslv3));
-			p_context_.get()
-			  ->set_verify_mode(boost::asio::ssl::context::verify_none);
-//			p_context_.get()
-//			  ->set_verify_mode(boost::asio::ssl::context::verify_peer);
-//			p_context_.get()
-//			  ->load_verify_file(verify_file_);
+std::cout << "open1" << std::endl;
+			context_
+				.set_verify_mode(boost::asio::ssl::context::verify_none);
+//			context_
+//				.set_verify_mode(boost::asio::ssl::context::verify_peer);
+//			context_
+//				.load_verify_file(verify_file_);
 
+std::cout << "open2" << std::endl;
 			p_session_.reset(
 			  new ssl_session(
-			    *(p_io_service_.get()), *(p_context_.get()),
+			    io_service_, context_,
 			    *this, url_, protocol));
+std::cout << "open3" << std::endl;
 		}
 
 		boost::thread(boost::bind(
-		    &boost::asio::io_service::run, p_io_service_.get()));
+		    &boost::asio::io_service::run, &io_service_));
 
 	}
 
 	void close()
 	{
+std::cout << "close1" << std::endl;
 		p_session_.get()->close();
-		p_io_service_.get()->stop();
+std::cout << "close2" << std::endl;
+		io_service_.stop();
+		io_service_.reset();
 
+std::cout << "close3" << std::endl;
 		p_session_.reset();
-		p_context_.reset();
-		p_io_service_.reset();
+std::cout << "close4" << std::endl;
 	}
 
 	void send(const std::string& msg)
@@ -867,8 +871,9 @@ private:
 	url url_;
 	std::string verify_file_;
 
-	std::auto_ptr<boost::asio::io_service> p_io_service_;
-	std::auto_ptr<boost::asio::ssl::context> p_context_;
+	boost::asio::io_service io_service_;
+	boost::asio::ssl::context context_;
+
 	std::auto_ptr<isession> p_session_;
 
 };
