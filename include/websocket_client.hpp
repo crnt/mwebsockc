@@ -258,12 +258,48 @@ public:
 	{
 		std::ostream os(&request_);
 		os.put(0x00);
+		os.put(0x00);
 		os.put(0xff);
 		os.flush();
 
 		// synchronized operation
-		boost::asio::write(socket_, request_);
+//		boost::asio::write(socket_, request_);
+		boost::asio::async_write(socket_, request_,
+		     boost::bind(&protocol::handle_close, this,
+		     boost::asio::placeholders::error));
 
+	}
+
+
+	void handle_close(const boost::system::error_code& err)
+	{
+
+	  if (!err)
+	    {
+
+		std::ostream os(&request_);
+		os.put(0x00);
+//		os.put(0x00);
+		os.put(0xff);
+		os.flush();
+
+		boost::asio::async_write(socket_, request_,
+		     boost::bind(&protocol::handle_close_dummy, this,
+		     boost::asio::placeholders::error));
+
+	    }
+	  else
+	    {
+	      handler_.on_error( err.value(), err.message() );
+	    }
+
+//		handler_.on_close();
+	}
+
+	void handle_close_dummy(const boost::system::error_code& err)
+	{
+		socket_.lowest_layer().close();
+		handler_.on_close();
 	}
 
 	void send( const std::string& msg )
@@ -588,8 +624,17 @@ public:
 
 	virtual void close()
 	{
+		io_service_.post(boost::bind(&session::handle_close, this));
+//		protocol_.close();
+//		socket_.lowest_layer().close();
+	}
+
+	void handle_close()
+	{
+		socket_.lowest_layer().close();
 		protocol_.close();
 	}
+
 
 
 	virtual void send( const std::string& msg )
@@ -693,9 +738,16 @@ public:
 
 	virtual void close()
 	{
-		protocol_.close();
+		io_service_.post(boost::bind(&ssl_session::handle_close, this));
+//		protocol_.close();
+//		socket_.lowest_layer().close();
 	}
 
+	void handle_close()
+	{
+		socket_.lowest_layer().close();
+		protocol_.close();
+	}
 
 	virtual void send( const std::string& msg )
 	{
@@ -825,8 +877,11 @@ std::cout << "open2" << std::endl;
 std::cout << "open3" << std::endl;
 		}
 
+		io_service_.reset();
 		boost::thread(boost::bind(
 		    &boost::asio::io_service::run, &io_service_));
+//		p_thread_ = new boost::thread(boost::bind(
+//		    &boost::asio::io_service::run, &io_service_));
 
 	}
 
@@ -835,11 +890,13 @@ std::cout << "open3" << std::endl;
 std::cout << "close1" << std::endl;
 		p_session_.get()->close();
 std::cout << "close2" << std::endl;
-		io_service_.stop();
-		io_service_.reset();
+//		io_service_.stop();
+//		p_thread_->join();
+//		delete p_thread_;
+//		io_service_.reset();
 
 std::cout << "close3" << std::endl;
-		p_session_.reset();
+//		p_session_.reset();
 std::cout << "close4" << std::endl;
 	}
 
@@ -873,6 +930,9 @@ private:
 
 	boost::asio::io_service io_service_;
 	boost::asio::ssl::context context_;
+
+
+//	boost::thread* p_thread_;
 
 	std::auto_ptr<isession> p_session_;
 

@@ -1,8 +1,6 @@
 #include <iostream>
 #include "websocket_client.hpp"
 
-const std::string url="wss://mitsuji.org/mchat/ws";
-
 class chat_client
   : public mwebsock::nclient
 {
@@ -47,9 +45,9 @@ int main(int argc, char** argv)
 
   try
     {
-      chat_client client(argv[1]);
+      chat_client client(argv[2]);
       client.set_verify_file("..\\dist\\org.mitsuji.server.crt");
-      client.connect(url);
+      client.connect(argv[1]);
 
       std::string line;
       while(std::getline(std::cin, line ))
@@ -73,7 +71,7 @@ int main(int argc, char** argv)
 	    break;
 	  case 'c':
 	    {
-	      client.connect(url);
+	      client.connect(argv[1]);
 	    }
 	    break;
 	  default:
