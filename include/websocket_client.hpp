@@ -97,117 +97,6 @@ private:
 
 
 
-class client_impl;
-
-class client_handler
-{
-public:
-  void set_client(client_impl* client)
-  {
-    client_ = client;
-  }
-
-  virtual void on_message( const std::string& msg) = 0;
-  virtual void on_open() = 0;
-  virtual void on_close() = 0;
-  virtual void on_error( int error_code, const std::string& msg ) = 0;
-
-protected:
-  client_impl* client_;
-
-};
-
-
-class client_impl
-{
-public:
-  static const int CONNECTING = 0;
-  static const int OPEN = 1;
-  static const int CLOSING = 2;
-  static const int CLOSED = 3;
-  
-  client_impl(client_handler& handler, const std::string& url, const std::string& protocol = "");
-
-  void close();
-  void send(const std::string& msg);
-
-  int ready_state() const;
-  
-private:
-  static const int INVALID_URI = 1;
-  static const int INVALID_RESPONSE = 2;
-  static const int BAD_STATUS = 3;
-  static const int HANDSHAKE_FAILED = 4;
-  static const int BAD_FRAME = 5;
-
-  void handle_resolve(const boost::system::error_code& err,
-      boost::asio::ip::tcp::resolver::iterator endpoint_iterator);
-
-  void handle_connect(const boost::system::error_code& err,
-      boost::asio::ip::tcp::resolver::iterator endpoint_iterator);
-
-  void handle_write_request(const boost::system::error_code& err);
-
-  void handle_read_status_line(const boost::system::error_code& err);
-
-  void handle_read_headers(const boost::system::error_code& err);
-
-  void handle_read_key(const boost::system::error_code& err);
-
-  void handle_read_frame_type(const boost::system::error_code& err);
-
-  void handle_read_text_frame(const boost::system::error_code& err);
-  //  void handle_read_binary_frame(const boost::system::error_code& err);
-
-  void handle_write_text_frame(const boost::system::error_code& err);
-
-  void check_handshake();
-  void check_frame_type();
-
-  int ready_state_;
-
-  client_handler& handler_;
-
-  url url_;
-  websocket_key_generator key_gen_;
-
-  boost::asio::io_service io_service_;
-
-  boost::asio::ip::tcp::resolver resolver_;
-  boost::asio::ip::tcp::socket socket_;
-
-  boost::asio::streambuf request_;
-  boost::asio::streambuf response_;
-
-  boost::thread* thread_;
-
-};
-
-
-class client
-  :public client_handler
-{
-public:
-  client();
- 
-  void connect(const std::string& url, const std::string& protocol = "");
-  void close();
-  void send(const std::string& msg);
-
-  int ready_state() const;
-
-  virtual void on_message( const std::string& msg) = 0;
-  virtual void on_open() = 0;
-  virtual void on_close() = 0;
-  virtual void on_error( int error_code, const std::string& msg ) = 0;
-
-private:
-  client_impl* client_impl_;
-
-};
-
-
-
 
 class isession
 {
@@ -263,7 +152,6 @@ public:
 		os.flush();
 
 		// synchronized operation
-//		boost::asio::write(socket_, request_);
 		boost::asio::async_write(socket_, request_,
 		     boost::bind(&protocol::handle_close, this,
 		     boost::asio::placeholders::error));
@@ -279,7 +167,6 @@ public:
 
 		std::ostream os(&request_);
 		os.put(0x00);
-//		os.put(0x00);
 		os.put(0xff);
 		os.flush();
 
@@ -293,7 +180,6 @@ public:
 	      handler_.on_error( err.value(), err.message() );
 	    }
 
-//		handler_.on_close();
 	}
 
 	void handle_close_dummy(const boost::system::error_code& err)
@@ -625,8 +511,6 @@ public:
 	virtual void close()
 	{
 		io_service_.post(boost::bind(&session::handle_close, this));
-//		protocol_.close();
-//		socket_.lowest_layer().close();
 	}
 
 	void handle_close()
@@ -739,8 +623,6 @@ public:
 	virtual void close()
 	{
 		io_service_.post(boost::bind(&ssl_session::handle_close, this));
-//		protocol_.close();
-//		socket_.lowest_layer().close();
 	}
 
 	void handle_close()
@@ -861,7 +743,6 @@ public:
 		}
 		else if(url_.protocol() == "wss")
 		{
-std::cout << "open1" << std::endl;
 			context_
 				.set_verify_mode(boost::asio::ssl::context::verify_none);
 //			context_
@@ -869,35 +750,21 @@ std::cout << "open1" << std::endl;
 //			context_
 //				.load_verify_file(verify_file_);
 
-std::cout << "open2" << std::endl;
 			p_session_.reset(
 			  new ssl_session(
 			    io_service_, context_,
 			    *this, url_, protocol));
-std::cout << "open3" << std::endl;
 		}
 
-		io_service_.reset();
+		io_service_.reset(); //
 		boost::thread(boost::bind(
 		    &boost::asio::io_service::run, &io_service_));
-//		p_thread_ = new boost::thread(boost::bind(
-//		    &boost::asio::io_service::run, &io_service_));
 
 	}
 
 	void close()
 	{
-std::cout << "close1" << std::endl;
 		p_session_.get()->close();
-std::cout << "close2" << std::endl;
-//		io_service_.stop();
-//		p_thread_->join();
-//		delete p_thread_;
-//		io_service_.reset();
-
-std::cout << "close3" << std::endl;
-//		p_session_.reset();
-std::cout << "close4" << std::endl;
 	}
 
 	void send(const std::string& msg)
@@ -930,9 +797,6 @@ private:
 
 	boost::asio::io_service io_service_;
 	boost::asio::ssl::context context_;
-
-
-//	boost::thread* p_thread_;
 
 	std::auto_ptr<isession> p_session_;
 
