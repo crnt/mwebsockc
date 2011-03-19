@@ -39,78 +39,6 @@ unsigned int random::next_int(unsigned int max)
 }
 
 
-url::url()
-  :raw_("")
-{
-}
-
-url::url(const std::string& raw)
-  :raw_(raw)
-{
-}
-
-void url::parse( const std::string& raw )
-{
-	raw_ = raw;
-	parse();
-}
-
-void url::parse()
-{
-  const std::string s1 = "://";
-  const std::string s2 = "/";
-  const std::string s3 = ":";
-
-  size_t a = raw_.find(s1);
-  if( a == std::string::npos )
-    {
-      throw url_exception("\"" + s1 + "\" not found");
-    }
-
-  protocol_ = raw_.substr(0, a);
-  if( !(protocol_ == "ws" || protocol_ == "wss") )
-    {
-      throw url_exception("protocol \"" + protocol_ + "\" is not supported");
-    }
-
-  size_t b = raw_.find(s2, a +s1.length());
-  if( b != std::string::npos )
-    {
-      endpoint_ = raw_.substr(a +s1.length(), b-(a+s1.length()));
-      path_ = raw_.substr(b);
-    }
-  else
-    {
-      endpoint_ = raw_.substr(a +s1.length());
-      path_ = "/";
-    }
-
-  size_t c = endpoint_.find(s3);
-  if( c != std::string::npos )
-    {
-      host_ = endpoint_.substr(0, c);
-      port_ = endpoint_.substr(c +s3.length());
-    }
-  else
-    {
-      host_ = endpoint_;
-      if( protocol_ == "ws" )
-	port_ = "80";
-      else if( protocol_ == "wss" )
-	port_ = "443";
-    }
-
-}
-
-
-const std::string& url::raw() const { return raw_; }
-
-const std::string& url::protocol() const { return protocol_; }
-const std::string& url::endpoint() const { return endpoint_; }
-const std::string& url::path() const { return path_; }
-const std::string& url::host() const { return host_; }
-const std::string& url::port() const { return port_; }
-
 
 
 
@@ -270,6 +198,71 @@ char websocket_key_generator::get_char()
   else
     return c + ncount; /* skip numeric chars */
 }
+
+
+
+
+
+
+bool url::parse( const std::string& raw )
+{
+	const std::string s1 = "://";
+	const std::string s2 = "/";
+	const std::string s3 = ":";
+
+	raw_ = raw;
+
+	protocol_ = "";
+	endpoint_ = "";
+	path_     = "";
+	host_     = "";
+	port_     = "";
+
+	size_t a = raw_.find(s1);
+	if( a == std::string::npos )
+	{
+		return false;
+    }
+
+	protocol_ = raw_.substr(0, a);
+	if( !(protocol_ == "ws" || protocol_ == "wss") )
+	{
+		return false;
+	}
+
+	size_t b = raw_.find(s2, a +s1.length());
+	if( b != std::string::npos )
+	{
+		endpoint_ = raw_.substr(a +s1.length(), b-(a+s1.length()));
+		path_ = raw_.substr(b);
+	}
+	else
+	{
+		endpoint_ = raw_.substr(a +s1.length());
+		path_ = "/";
+	}
+
+	size_t c = endpoint_.find(s3);
+	if( c != std::string::npos )
+	{
+		host_ = endpoint_.substr(0, c);
+		port_ = endpoint_.substr(c +s3.length());
+	}
+	else
+	{
+		host_ = endpoint_;
+		if( protocol_ == "ws" )
+			port_ = "80";
+		else if( protocol_ == "wss" )
+			port_ = "443";
+	}
+
+	return true;
+}
+
+
+
+
 
 
 

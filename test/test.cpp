@@ -2,7 +2,7 @@
 #include "websocket_client.hpp"
 
 class chat_client
-  : public mwebsock::nclient
+  : public mwebsock::client
 {
 public:
   chat_client( const std::string& name )
@@ -46,7 +46,7 @@ int main(int argc, char** argv)
   try
     {
       chat_client client(argv[2]);
-      client.set_verify_file("..\\dist\\org.mitsuji.server.crt");
+//      client.set_ssl_verify_file("..\\dist\\org.mitsuji.server.crt");
       client.connect(argv[1]);
 
       std::string line;
